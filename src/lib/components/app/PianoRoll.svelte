@@ -136,6 +136,8 @@
   // The playhead in clip time, while this clip is playing somewhere in the song.
   const localPlayhead = $derived.by(() => {
     if (!playhead.running || playhead.ticks < 0 || !clip) return -1;
+    // Pattern mode: the playhead already counts in the looping clip (if it's this one).
+    if (playhead.pattern) return playhead.pattern.trackId === track.id && playhead.pattern.clipId === clip.id ? playhead.ticks : -1;
     const content = contentLength(clip.duration, bar);
     for (const pl of track.placements) {
       if (pl.clipId !== clip.id) continue;

@@ -14,7 +14,10 @@ import * as Tone from 'tone';
 export const playhead = $state({
   running: false,
   ticks: 0, // project ticks; negative during a count-in
-  cursor: 0 // where Play starts (project ticks)
+  cursor: 0, // where Play starts (project ticks)
+  // Pattern mode: `ticks` count in this clip / pattern (of this track), not the song; for a
+  // voice track's loop, from `origin` in the song. Null when playing the song.
+  pattern: null as { trackId: string; clipId?: string; origin: number } | null
 });
 
 let frame = 0;
@@ -26,7 +29,8 @@ function update() {
   frame = requestAnimationFrame(update);
 }
 
-export function startPlayhead(offsetTicks = 0) {
+export function startPlayhead(offsetTicks = 0, pattern: typeof playhead.pattern = null) {
+  playhead.pattern = pattern;
   cancelAnimationFrame(frame);
   offset = offsetTicks;
   playhead.running = true;
@@ -36,12 +40,13 @@ export function startPlayhead(offsetTicks = 0) {
 export function stopPlayhead() {
   cancelAnimationFrame(frame);
   playhead.running = false;
+  playhead.pattern = null;
   playhead.ticks = playhead.cursor;
 }
 
 // Moves the start position; while playing (not recording: offset 0), playback jumps there.
 export function seek(ticks: number) {
   playhead.cursor = Math.max(0, Math.round(ticks));
-  if (playhead.running && offset === 0) Tone.getTransport().ticks = playhead.cursor;
+  if (playhead.running && offset === 0 && !playhead.pattern) Tone.getTransport().ticks = playhead.cursor;
   if (!playhead.running) playhead.ticks = playhead.cursor;
 }

@@ -137,9 +137,12 @@ export function scheduleRecording(
         }, `${startTicks}i`)
       : null;
 
-  // A reversed buffer plays from its end: the trim measures from there.
-  const offset = edit.reverse ? full - trimEnd : trimStart;
-  player.sync().start(`${startTicks}i`, offset, trimEnd - trimStart);
+  // A reversed buffer plays from its end: the trim measures from there. If it started
+  // before the transport's 0 (recording from the playhead), it picks up part-way.
+  const skip = startTicks < 0 ? Tone.Ticks(-startTicks).toSeconds() * speed : 0;
+  const offset = (edit.reverse ? full - trimEnd : trimStart) + skip;
+  const duration = trimEnd - trimStart - skip;
+  if (duration > 0) player.sync().start(`${Math.max(0, startTicks)}i`, offset, duration);
   return {
     dispose() {
       if (fades !== null) Tone.getTransport().clear(fades);

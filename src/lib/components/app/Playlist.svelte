@@ -263,7 +263,7 @@
           {/if}
         {/each}
         <polygon points="{x(playhead.cursor) - 6},0 {x(playhead.cursor) + 6},0 {x(playhead.cursor)},9" class="pointer-events-none fill-sky-500" />
-        {#if playhead.running && playhead.ticks >= 0}
+        {#if playhead.running && playhead.ticks >= 0 && !playhead.pattern}
           <line x1={x(playhead.ticks)} x2={x(playhead.ticks)} y1="0" y2={RULER_H} class="pointer-events-none stroke-red-500" stroke-width="2" />
         {/if}
       </svg>
@@ -361,7 +361,7 @@
           {/if}
 
           <line x1={x(playhead.cursor)} x2={x(playhead.cursor)} y1="0" y2={LANE_H} class="pointer-events-none stroke-sky-400" stroke-dasharray="4 4" />
-          {#if playhead.running && playhead.ticks >= 0}
+          {#if playhead.running && playhead.ticks >= 0 && !playhead.pattern}
             <line x1={x(playhead.ticks)} x2={x(playhead.ticks)} y1="0" y2={LANE_H} class="pointer-events-none stroke-red-500" stroke-width="2" />
           {/if}
         </svg>

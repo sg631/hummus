@@ -3,8 +3,8 @@
   - click a card's name to select the track (the editor and Record use it); double-click
     (or right-click → Rename) to rename it
   - M mutes, S solos (only soloed tracks play), ⧉ duplicates, ✕ deletes
-  - melody tracks: instrument (✎ designs your own), and Chords: polyphonic (notes can
-    overlap; no pitch bends)
+  - melody tracks: instrument (✎ designs your own), and Allow Polyphony (multiple notes at
+    once, e.g. chords; no pitch bends)
   - knobs: volume, pan, swing (melody and drums); drag up/down, double-click or
     right-click to reset
   - effects (EffectList): the sound goes through them in order
@@ -79,7 +79,7 @@
         ? [
             { separator: true },
             { label: 'Instrument…', action: () => openInstrument(track.id) },
-            { label: 'Chords (polyphonic)', checked: !!track.poly, action: () => (track.poly = !track.poly) }
+            { label: 'Allow Polyphony (multiple notes)', checked: !!track.poly, action: () => (track.poly = !track.poly) }
           ]
         : []),
       ...(track.kind !== 'voice'
@@ -130,7 +130,7 @@
           <!-- Click: select. Double-click: rename. -->
           <button class="min-w-0 flex-1 text-left" onclick={() => (selection.trackId = track.id)} ondblclick={() => rename(track.id)} title="Double-click to rename">
             <div class="truncate text-sm font-medium">{track.name}</div>
-            <div class="text-muted-foreground text-xs">{track.kind === 'midi' ? (track.poly ? 'melody · chords' : 'melody') : track.kind}</div>
+            <div class="text-muted-foreground text-xs">{track.kind === 'midi' ? (track.poly ? 'melody · polyphonic' : 'melody') : track.kind}</div>
           </button>
         {/if}
         <button
@@ -163,11 +163,11 @@
             ]}
           />
           <Button size="sm" variant="ghost" class="h-6 px-2" onclick={() => openInstrument(track.id)} aria-label="Edit instrument">✎</Button>
-          <label class="flex items-center gap-1" title="Polyphonic: notes can overlap (chords). Sung slides and vibrato aren't played.">
-            <Switch size="sm" bind:checked={() => !!track.poly, (v) => (track.poly = v)} />
-            Chords
-          </label>
         </div>
+        <label class="flex items-center gap-2 text-xs" title="Notes can overlap (chords, layers). Sung slides and vibrato aren't played.">
+          <Switch size="sm" bind:checked={() => !!track.poly, (v) => (track.poly = v)} />
+          Allow Polyphony (multiple notes)
+        </label>
       {/if}
 
       <!-- Knobs: drag up or down to turn, double-click (or right-click) to reset. -->

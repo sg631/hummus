@@ -35,7 +35,14 @@
 			position: 'right' as const,
 			title: 'Your tracks',
 			description:
-				'Click a track to select it; double-click its name to rename it. M mutes, S solos, ⧉ duplicates. Melody tracks pick an instrument (✎ to design your own) and can play chords. Knobs: volume, pan, swing (drag up or down; double-click or right-click to reset). Effects: + Effect, drag to reorder. Right-click almost anything for more options.'
+				'Click a track to select it; double-click its name to rename it. M mutes, S solos, ⧉ duplicates. Melody tracks pick an instrument (✎ to design your own) and can allow polyphony (several notes at once). Knobs: volume, pan, swing (drag up or down; double-click or right-click to reset). Effects: + Effect, drag to reorder. Right-click almost anything for more options.'
+		},
+		{
+			target: 'tour-mode',
+			position: 'bottom' as const,
+			title: 'Pattern or Song',
+			description:
+				"Song plays everything from the playhead. Pattern loops just the selected track's clip or drum pattern. Recording in Song mode starts at the playhead; in Pattern mode it's a looper: keep singing round the loop and every pass is layered."
 		},
 		{
 			target: 'tour-record',

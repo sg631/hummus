@@ -42,6 +42,10 @@
   // The step playing now in this pattern, or -1 (stopped, or another pattern is playing).
   const current = $derived.by(() => {
     if (!playhead.running || playhead.ticks < 0 || !pattern) return -1;
+    // Pattern mode: the playhead already counts in the looping pattern (if it's this one).
+    if (playhead.pattern) {
+      return playhead.pattern.trackId === track.id && playhead.pattern.clipId === pattern.id ? Math.floor(playhead.ticks / STEP_TICKS) % steps : -1;
+    }
     let local = playhead.ticks;
     if (track.placements.length) {
       const bar = barTicks(project.timeSignature);

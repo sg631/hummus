@@ -10,13 +10,15 @@ export interface RecordingSettings {
   countInBars: number; // bars of clicks before the take: 0, 1 or 2
   metronome: boolean;  // click while recording and playing (the top bar's metronome button)
   playAlong: boolean;  // hear the other tracks while recording
+  loopBars: number;    // pattern mode: bars looped for an empty clip or a voice track
+  overdub: boolean;    // tracks with polyphony: recording adds notes (true) or replaces them
   take: TakeSettings;  // how the take is turned into notes (melody tracks)
 }
 
 const STORAGE_KEY = 'hum-daw:recording-settings';
 
 export function defaultRecordingSettings(): RecordingSettings {
-  return { countInBars: 1, metronome: true, playAlong: true, take: structuredClone(DEFAULT_TAKE_SETTINGS) };
+  return { countInBars: 1, metronome: true, playAlong: true, loopBars: 2, overdub: true, take: structuredClone(DEFAULT_TAKE_SETTINGS) };
 }
 
 // The saved settings over the defaults, so settings added later still get a value.

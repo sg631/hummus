@@ -110,6 +110,19 @@
           </ToggleGroup.Root>
         </div>
 
+        <div class="flex flex-col gap-2">
+          <Label>Looper length (pattern mode, for an empty clip or a voice track)</Label>
+          <ToggleGroup.Root
+            type="single"
+            class="justify-start"
+            bind:value={() => String(rec.loopBars), (v) => v && (rec.loopBars = Number(v))}
+          >
+            {#each [1, 2, 4, 8] as n (n)}
+              <ToggleGroup.Item value={String(n)}>{n} bar{n > 1 ? 's' : ''}</ToggleGroup.Item>
+            {/each}
+          </ToggleGroup.Root>
+        </div>
+
         <div class="flex items-center gap-2">
           <Switch id="metronome" bind:checked={rec.metronome} />
           <Label for="metronome">Metronome (also the metronome button in the top bar)</Label>

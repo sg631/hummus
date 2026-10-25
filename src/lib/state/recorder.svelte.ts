@@ -24,6 +24,9 @@ export interface RecordOptions {
   // transport is reset and before it starts. Project tick 0 is at transport tick
   // `offsetTicks` (after the count-in), so add it to everything you schedule.
   playAlong?: (offsetTicks: number) => void;
+  // Looper: after the count-in, the transport loops `loopTicks` ticks (the play-along with
+  // it) while the take keeps recording; each pass can be layered afterwards.
+  loopTicks?: number;
 }
 
 export interface RecordedTake {
@@ -61,6 +64,11 @@ export class Recorder {
     transport.position = 0;
     transport.bpm.value = options.bpm;
     transport.timeSignature = options.timeSignature;
+    transport.loop = !!options.loopTicks;
+    if (options.loopTicks) {
+      transport.loopStart = `${countInTicks}i`;
+      transport.loopEnd = `${countInTicks + options.loopTicks}i`;
+    }
 
     this.metronome ??= new Metronome();
     this.metronome.timeSignature = options.timeSignature;
@@ -104,6 +112,7 @@ export class Recorder {
   private reset() {
     this.recording = false;
     Tone.getTransport().stop();
+    Tone.getTransport().loop = false;
     this.metronome?.unschedule();
     Tone.getDraw().cancel(0);
     this.beat = null;

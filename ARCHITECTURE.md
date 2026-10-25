@@ -64,6 +64,21 @@ how you like to record, whatever the song.
 
 ## How things happen
 
+**Pattern / Song** (the switch next to Play; `view.play`): **Song** plays the whole
+arrangement from the playhead. **Pattern** loops just the selected track's current clip
+or drum pattern (a voice track: `loopBars` bars from the playhead's bar), built by
+`patternProject` and played with the transport looping.
+- **Recording in Song mode** starts at the playhead's bar with everything else playing
+  along (`shiftProject` makes the song start there); the take becomes a new clip placed
+  there (or fills the current clip if it's empty and placed there), or a new recording at
+  that bar on a voice track.
+- **Loop record (Pattern mode)**: the loop keeps repeating while you sing, and you hear
+  the layers so far. Every pass is a layer (`music/looper.ts`): a melody's notes from all
+  passes are folded onto the loop and added to the clip (`foldNotes`); a voice take is cut
+  into one recording per pass, stacked at the loop's start (`slicePasses`). One pass into
+  an empty clip is an ordinary take (quantize bar, redo take…). Ctrl+Z undoes it.
+- Settings → Recording → Looper length: the loop for an empty clip or a voice track.
+
 **The playlist** (`Playlist.svelte`, the Playlist tab; `music/arrange.ts`): the whole song,
 one lane per track. A clip's notes (or a drum pattern's steps) are stored once on its
 track; the playlist holds only placements (`{ clipId, start, length? }`), so copying a
@@ -112,7 +127,7 @@ over outer ones (the action is a native listener that stops the event).
   in `applyMix`, not with Tone's own solo, which would also silence drum rows).
 - **Swing** knob on melody and drum tracks: only that track swings. Melody notes on
   off-beats are pushed late when scheduled (`swingTicks` in `music/drums.ts`).
-- **Chords** (melody tracks): polyphonic, `track.poly`. The instrument becomes a
+- **Allow Polyphony (multiple notes)** (melody tracks): `track.poly`. The instrument becomes a
   `Tone.PolySynth` of its engine (samplers always are), so notes can overlap; sung bends
   and slurs don't play on it. Edit it in the piano roll as usual.
 
@@ -433,7 +448,7 @@ editing them is how things break:
 | `state/tour.svelte.ts` | Whether the tour has been seen. |
 | `state/context-menu.svelte.ts`, `ContextMenu.svelte` | The right-click menu system. |
 | `state/takes.svelte.ts` | The last take per track, in memory. |
-| `music/arrange.ts` | Placements → what plays (tested). |
+| `music/arrange.ts`, `music/looper.ts` | Placements → what plays; pattern mode; looper layers (tested). |
 | `state/view.svelte.ts` | Editor or Playlist in the main area. |
 | `music/shift-keys.ts`, `state/shift-keys.svelte.ts` | Shift keys while recording (tested). |
 | `music/note-expression.ts` | A note's pitch over time from its curve and expression (tested). |
@@ -489,7 +504,7 @@ count-in toggle and `TimeSignatureInput.svelte` (with shadcn-svelte's `input`),
 then drum pattern lengths, per-sound drum swing and the playlist with shared clips
 (`music/arrange.ts`, `Playlist.svelte`, `state/view.svelte.ts`, the clip/pattern functions in
 `state/project.svelte.ts`, the drum grid rewrite), and right-click menus everywhere, custom scrollbars, track renaming, duplicating and
-solo, per-track swing, polyphonic (Chords) tracks, drum rows as full instruments (pan,
+solo, per-track swing, polyphonic tracks ("Allow Polyphony"), drum rows as full instruments (pan,
 mute, effects), the voice editor, the take's pitch line and the bench's readouts in the
 app (rhythm, tuning, note details, redo take, voice track, save take, MIDI export), the
 always-visible meters, and the bitcrusher's 1-bit fix (`EffectList.svelte`,

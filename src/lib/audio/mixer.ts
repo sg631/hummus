@@ -133,13 +133,19 @@ export function setPlaybackMetronome(on: boolean) {
 
 // From `from` (ticks; the start by default). Stops whatever was playing first, or it would
 // keep playing on top.
-export async function playProject(project: Project, { metronome = false, from = 0 } = {}) {
+// `loop`: play the first `loop` ticks over and over (pattern mode).
+export async function playProject(project: Project, { metronome = false, from = 0, loop = 0 } = {}) {
   await initAudio(); // audio can only start after a click: call this from a click handler
   await loadProjectSamples(project);
   stopProject();
   const transport = Tone.getTransport();
   transport.position = 0;
-  transport.ticks = from;
+  transport.loop = loop > 0;
+  if (loop > 0) {
+    transport.loopStart = 0;
+    transport.loopEnd = `${loop}i`;
+  }
+  transport.ticks = loop > 0 ? from % loop : from;
   transport.bpm.value = project.bpm;
   transport.timeSignature = project.timeSignature;
   scheduleProject(project);
@@ -154,6 +160,7 @@ export async function playProject(project: Project, { metronome = false, from = 
 export function stopProject() {
   const transport = Tone.getTransport();
   transport.stop();
+  transport.loop = false;
   transport.cancel();
   clicker?.unschedule();
   for (const d of disposables) d.dispose();

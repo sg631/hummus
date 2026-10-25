@@ -161,6 +161,17 @@
     window.addEventListener('pointerup', () => window.removeEventListener('pointermove', to), { once: true });
   }
 
+  // The playhead in the song (pattern mode: a loop of this track, from its origin), or -1.
+  const songTicks = $derived(
+    !playhead.running || playhead.ticks < 0
+      ? -1
+      : playhead.pattern
+        ? playhead.pattern.trackId === track.id
+          ? playhead.pattern.origin + playhead.ticks
+          : -1
+        : playhead.ticks
+  );
+
   const formatDb = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
 </script>
 
@@ -236,8 +247,8 @@
           </g>
         {/each}
         <line x1={x(playhead.cursor)} x2={x(playhead.cursor)} y1="0" y2={WAVE_H * track.clips.length + 8} class="pointer-events-none stroke-sky-400" stroke-dasharray="4 4" />
-        {#if playhead.running && playhead.ticks >= 0}
-          <line x1={x(playhead.ticks)} x2={x(playhead.ticks)} y1="0" y2={WAVE_H * track.clips.length + 8} class="pointer-events-none stroke-red-500" stroke-width="2" />
+        {#if songTicks >= 0}
+          <line x1={x(songTicks)} x2={x(songTicks)} y1="0" y2={WAVE_H * track.clips.length + 8} class="pointer-events-none stroke-red-500" stroke-width="2" />
         {/if}
       </svg>
     {:else}

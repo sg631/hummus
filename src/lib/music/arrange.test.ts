@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { arrangementEnd, contentLength, expandPlacements, placementAt } from './arrange';
-import type { NoteClip, Placement } from './types';
+import { arrangementEnd, contentLength, expandPlacements, patternProject, placementAt, shiftProject } from './arrange';
+import type { DrumTrack, MidiTrack, NoteClip, Placement, Project } from './types';
 
 const BAR = 1920; // 4/4
 const clip: NoteClip = {
@@ -54,5 +54,30 @@ describe('arrangement', () => {
     expect(placementAt(placements, BAR * 1.5, len)).toBeUndefined();
     expect(placementAt(placements, BAR * 3, len)?.id).toBe('p2');
     expect(arrangementEnd(placements, len)).toBe(BAR * 4);
+  });
+
+  const song = (): Project => ({
+    name: 's', bpm: 120, timeSignature: [4, 4], key: 'C', scale: 'major', detune: 0, instruments: [],
+    tracks: [
+      { id: 'm', kind: 'midi', name: 'M', volume: 0, pan: 0, mute: false, swing: 0.5, swingUnit: 8, effects: [], instrument: 'piano',
+        clips: [clip], placements: [{ id: 'p1', clipId: 'c', start: 0 }, { id: 'p2', clipId: 'c', start: BAR * 2 }], current: 'c' },
+      { id: 'd', kind: 'drums', name: 'D', volume: 0, pan: 0, mute: false, swing: 0.5, swingUnit: 8, effects: [], rows: [],
+        patterns: [{ id: 'pat', name: 'P', bars: 2, steps: {} }], placements: [{ id: 'dp', clipId: 'pat', start: BAR }], current: 'pat' }
+    ]
+  });
+
+  it('pattern mode plays just the current clip or pattern, looped', () => {
+    const m = patternProject(song(), 'm', 0, 2)!;
+    expect(m.project.tracks).toHaveLength(1);
+    expect(m.length).toBe(BAR);
+    const d = patternProject(song(), 'd', 0, 2)!;
+    expect(d.length).toBe(BAR * 2);
+  });
+
+  it('shifts the song to start at the playhead', () => {
+    const shifted = shiftProject(song(), BAR * 2);
+    const melody = shifted.tracks[0] as MidiTrack;
+    expect(melody.clips[0].notes.map((n) => n.start)).toEqual([0, 1440]); // the second placement, now at 0
+    expect((shifted.tracks[1] as DrumTrack).placements[0].start).toBe(-BAR); // started earlier: picks up part-way
   });
 });
