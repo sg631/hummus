@@ -88,58 +88,70 @@ export interface NoteClip {
 }
 
 // ---------- Project ----------
+//
+// The whole song: everything the app saves and plays. Positions are in ticks (PPQ per
+// quarter note, see time.ts), so changing `bpm` speeds everything up or slows it down
+// without moving any note.
 
 export interface Project {
-  id: string;
   name: string;
-  createdAt: number;
-  updatedAt: number;
-  bpm: number;
-  timeSignature: TimeSignature;
-  key: string;
-  scale: string;
+  bpm: number;                  // quarter notes per minute
+  timeSignature: TimeSignature; // e.g. [4, 4]
   tracks: Track[];
 }
 
+// Every kind of track. Check `kind` to know which one you have:
+//   if (track.kind === 'midi') { track.clips … }
+export type Track = MidiTrack | VoiceTrack | DrumTrack;
+
+// What every track has.
 interface TrackBase {
   id: string;
   name: string;
-  volume: number; // dB
-  pan: number;    // -1 to 1
+  volume: number; // dB: 0 is as recorded, -6 about half as loud, -60 near silent
   mute: boolean;
-  solo: boolean;
-  effects: EffectConfig[];
+  effects: Effects;
 }
 
-export interface InstrumentTrack extends TrackBase {
-  type: 'instrument';
-  instrument: SynthConfig;
+// How much of each effect is mixed in: 0 = off, 1 = all effect.
+export interface Effects {
+  reverb: number;
+  delay: number;
+}
+
+// Notes played by an instrument: a sung melody (transcribed), chords, or notes drawn in
+// the piano roll.
+export interface MidiTrack extends TrackBase {
+  kind: 'midi';
+  instrument: InstrumentName;
   clips: NoteClip[];
 }
 
-export interface AudioTrack extends TrackBase {
-  type: 'audio';
-  clips: AudioClip[];
+// The instruments a MIDI track can use (audio/instruments.ts turns a name into a sound).
+export const INSTRUMENTS = ['piano', 'synth', 'bass', 'pluck', 'bell', 'organ'] as const;
+export type InstrumentName = (typeof INSTRUMENTS)[number];
+
+// Recorded audio, played back as it is (a voice on top, not transcribed).
+export interface VoiceTrack extends TrackBase {
+  kind: 'voice';
+  clips: VoiceClip[];
 }
 
-export type Track = InstrumentTrack | AudioTrack;
-
-export interface AudioClip {
+export interface VoiceClip {
   id: string;
-  recordingId: string;
-  start: number;     // ticks
-  trimStart: number; // seconds into the recording
-  duration: number;  // ticks
+  start: number;         // ticks, where it starts on the timeline
+  audio: Float32Array;   // the recording, mono
+  sampleRate: number;
+  recordedBpm: number;   // the tempo it was sung to (playing at another tempo stretches it)
 }
 
-export interface SynthConfig {
-  kind: 'synth' | 'fm' | 'am' | 'mono';
-  options: Record<string, unknown>;
+// A drum loop: a grid of steps, repeated for the whole song.
+export interface DrumTrack extends TrackBase {
+  kind: 'drums';
+  // steps[sound][step]: whether that sound plays on that step. One row per DRUM_SOUNDS
+  // entry; 16 steps = one bar of sixteenth notes in 4/4.
+  steps: boolean[][];
 }
 
-export interface EffectConfig {
-  id: string;
-  kind: 'reverb' | 'delay' | 'filter' | 'distortion' | 'chorus';
-  enabled: boolean;
-  params: Record<string, number>;
-}
+export const DRUM_SOUNDS = ['kick', 'snare', 'hihat'] as const;
+export type DrumSound = (typeof DRUM_SOUNDS)[number];
