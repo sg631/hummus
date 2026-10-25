@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import { Button } from '$lib/components/ui/button/index.js';
-  import { loadProjectSamples, playProject, scheduleProject, setPlaybackMetronome, stopProject } from '$lib/audio/mixer';
+  import { loadProjectSamples, playProject, scheduleProject, setMasterVolume, setPlaybackMetronome, stopProject } from '$lib/audio/mixer';
   import { Knob } from '$lib/components/ui/knob/index.js';
   import { applyShifts, formatShift } from '$lib/music/shift-keys';
   import * as ToggleGroup from '$lib/components/ui/toggle-group/index.js';
@@ -234,6 +234,10 @@
     recorder.setMetronome(recordingSettings.metronome);
   }
 
+  // Master volume: heard straight away, whether playing or not.
+  $effect(() => setMasterVolume(project.masterVolume));
+  const formatSemis = (v: number) => (v === 0 ? '0 st' : `${v > 0 ? '+' : '−'}${Math.abs(v)} st`);
+
   const formatCents = (v: number) => (v === 0 ? 'A440' : `${v > 0 ? '+' : '−'}${Math.abs(v)}¢`);
 
   // Every melody track as a MIDI file (one MIDI track each).
@@ -266,134 +270,178 @@
   }}
 />
 
-<!-- One row (scrolls sideways on narrow screens rather than wrapping). -->
-<div class="flex items-center gap-2 overflow-x-auto border-b px-3 py-2 whitespace-nowrap [&>*]:shrink-0">
-  <!-- The id="tour-…" spans are what the guided tour (AppTour.svelte) points at. -->
-  <span id="tour-play" class="inline-flex">
-    <Button onclick={playing ? stop : play} disabled={recorder.recording}>
-      {playing ? 'Stop' : 'Play'}
-    </Button>
-  </span>
-
-  <!-- Song: play the whole arrangement. Pattern: loop the selected track's clip / pattern
-       (recording there layers each pass: looper). -->
-  <span id="tour-mode" class="inline-flex">
-    <ToggleGroup.Root
-      type="single"
-      size="sm"
-      variant="outline"
-      disabled={recorder.recording || playing}
-      bind:value={() => view.play, (v) => v && (view.play = v as 'song' | 'pattern')}
-    >
-      <ToggleGroup.Item value="pattern" title="Loop the selected track's clip or pattern (Record layers each pass)">Pattern</ToggleGroup.Item>
-      <ToggleGroup.Item value="song" title="Play the whole song (Record from the playhead)">Song</ToggleGroup.Item>
-    </ToggleGroup.Root>
-  </span>
-
-  <span id="tour-record" class="inline-flex">
-    <Button
-      variant={recorder.recording ? 'destructive' : 'outline'}
-      onclick={toggleRecord}
-      disabled={!selectedTrack() || selectedTrack()?.kind === 'drums'}
-    >
-      {recorder.countingIn ? 'Cancel' : recorder.recording ? 'Stop recording' : view.play === 'pattern' ? 'Loop record' : 'Record'}
-    </Button>
-  </span>
-
-  <!-- Recording into a track that allows polyphony: add to its notes, or replace them. -->
-  <span
-    class="inline-flex"
-    title={selectedTrack()?.kind === 'midi' && (selectedTrack() as MidiTrack).poly
-      ? 'Over: recording adds notes (loop: every pass layered). Replace: recording replaces them (loop: the last full pass).'
-      : 'Turn on "Allow Polyphony" on the track to record over its notes'}
-  >
-    <ToggleGroup.Root
-      type="single"
-      size="sm"
-      variant="outline"
-      disabled={recorder.recording || !(selectedTrack()?.kind === 'midi' && (selectedTrack() as MidiTrack).poly)}
-      bind:value={() => (recordingSettings.overdub ? 'over' : 'replace'), (v) => v && (recordingSettings.overdub = v === 'over')}
-    >
-      <ToggleGroup.Item value="over">Over</ToggleGroup.Item>
-      <ToggleGroup.Item value="replace">Replace</ToggleGroup.Item>
-    </ToggleGroup.Root>
-  </span>
-
-  {#if recorder.countingIn && recorder.beat !== null}
-    <span class="font-mono text-sm">count-in {recorder.beat + 1}</span>
-  {:else if playhead.running}
-    <span class="font-mono text-sm">{position}</span>
-  {/if}
-
-  <!-- While recording a melody: the shift held now (shift keys, music/shift-keys.ts). -->
-  {#if shiftKeys.active}
-    <span
-      class="rounded px-2 py-1 font-mono text-xs {shiftKeys.shift ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'}"
-      title="Hold 1–9 / 0 (+ semitones), with − to go down; Z X C V: −2 −1 +1 +2 octaves; ` held: slide to the new note"
-    >
-      shift {formatShift(shiftKeys.shift)}{shiftKeys.slide ? ' · slide' : ''}
+<!-- The top bar: groups of controls, each two rows high (what goes together, stacked), with
+     thin dividers between groups. Scrolls sideways on narrow screens rather than wrapping.
+     The id="tour-…" elements are what the guided tour (AppTour.svelte) points at. -->
+<div class="flex items-stretch gap-3 overflow-x-auto border-b px-3 py-2 whitespace-nowrap [&>*]:shrink-0">
+  <!-- Transport: Play, Record. -->
+  <div class="flex w-36 flex-col gap-1.5">
+    <span id="tour-play" class="flex h-10">
+      <Button class="h-10 w-full" onclick={playing ? stop : play} disabled={recorder.recording}>
+        {playing ? '■ Stop' : '▶ Play'}
+      </Button>
     </span>
-  {/if}
+    <span id="tour-record" class="flex h-10">
+      <Button
+        class="h-10 w-full"
+        variant={recorder.recording ? 'destructive' : 'outline'}
+        onclick={toggleRecord}
+        disabled={!selectedTrack() || selectedTrack()?.kind === 'drums'}
+      >
+        <span class={recorder.recording ? 'text-white' : 'text-red-500'}>●</span>
+        {recorder.countingIn ? 'Cancel' : recorder.recording ? 'Stop recording' : view.play === 'pattern' ? 'Loop record' : 'Record'}
+      </Button>
+    </span>
+  </div>
 
-  <!-- Song: tempo, time signature, metronome, tuning. -->
-  <div id="tour-song" class="flex items-center gap-2">
-    <!-- Tempo. Changing it while playing applies on the next Play. -->
-    <div id="tour-bpm"><BpmWheel disabled={recorder.recording} /></div>
+  <div class="bg-border w-px"></div>
 
-    <TimeSignatureInput disabled={recorder.recording} />
-
-    <button
-      class="flex h-10 w-10 items-center justify-center rounded-md border {recordingSettings.metronome ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}"
-      onclick={toggleMetronome}
-      aria-pressed={recordingSettings.metronome}
-      title="Metronome {recordingSettings.metronome ? 'on' : 'off'}"
+  <!-- What plays and how recording writes: Pattern / Song, Over / Replace. -->
+  <div id="tour-mode" class="flex flex-col gap-1.5">
+    <div class="flex h-10 items-center">
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        class="w-full"
+        disabled={recorder.recording || playing}
+        bind:value={() => view.play, (v) => v && (view.play = v as 'song' | 'pattern')}
+      >
+        <ToggleGroup.Item class="flex-1" value="pattern" title="Loop the selected track's clip or pattern (Record layers each pass)">Pattern</ToggleGroup.Item>
+        <ToggleGroup.Item class="flex-1" value="song" title="Play the whole song (Record from the playhead)">Song</ToggleGroup.Item>
+      </ToggleGroup.Root>
+    </div>
+    <!-- Recording into a track that allows polyphony: add to its notes, or replace them. -->
+    <div
+      class="flex h-10 items-center"
+      title={selectedTrack()?.kind === 'midi' && (selectedTrack() as MidiTrack).poly
+        ? 'Over: recording adds notes (loop: every pass layered). Replace: recording replaces them (loop: the last full pass).'
+        : 'Turn on "Allow Polyphony" on the track to record over its notes'}
     >
-      <!-- A metronome: the case, and its pendulum. -->
-      <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 3h6l4 18H5L9 3z" />
-        <path d="M12 17l5-11" />
-        <path d="M8 17h8" />
-      </svg>
-    </button>
-
-    <!-- Count-in: bars of clicks before recording starts (also in Settings → Recording). -->
-    <div class="flex items-center gap-1.5" title="Bars of clicks before recording starts">
-      <span class="text-muted-foreground text-xs">Count-in</span>
       <ToggleGroup.Root
         type="single"
         size="sm"
         variant="outline"
-        disabled={recorder.recording}
-        bind:value={() => String(recordingSettings.countInBars), (v) => v && (recordingSettings.countInBars = Number(v))}
+        class="w-full"
+        disabled={recorder.recording || !(selectedTrack()?.kind === 'midi' && (selectedTrack() as MidiTrack).poly)}
+        bind:value={() => (recordingSettings.overdub ? 'over' : 'replace'), (v) => v && (recordingSettings.overdub = v === 'over')}
       >
-        <ToggleGroup.Item value="0" aria-label="No count-in">Off</ToggleGroup.Item>
-        <ToggleGroup.Item value="1" aria-label="One bar">1</ToggleGroup.Item>
-        <ToggleGroup.Item value="2" aria-label="Two bars">2</ToggleGroup.Item>
+        <ToggleGroup.Item class="flex-1" value="over">Over</ToggleGroup.Item>
+        <ToggleGroup.Item class="flex-1" value="replace">Replace</ToggleGroup.Item>
       </ToggleGroup.Root>
-    </div>
-
-    <div title="Tuning: shifts every instrument and voice (double-click: back to A440)">
-      <Knob size={28} bind:value={project.detune} min={-100} max={100} step={1} defaultValue={0} format={formatCents} />
     </div>
   </div>
 
-  <span id="tour-save" class="inline-flex">
-    <Button variant="outline" onclick={save} disabled={recorder.recording}>Save</Button>
-  </span>
-  <Button
-    variant="outline"
-    onclick={exportMidi}
-    disabled={recorder.recording || !project.tracks.some((t) => t.kind === 'midi' && t.clips.some((c) => c.notes.length))}
-    title="Export MIDI: download every melody track's notes as a MIDI file">MIDI ↓</Button
-  >
-  <span id="tour-settings" class="inline-flex">
-    <Button variant="outline" onclick={() => (settingsOpen = true)} disabled={recorder.recording}>Settings</Button>
-  </span>
-  <Button variant="ghost" onclick={startTour} disabled={recorder.recording} title="The guided tour">Tour</Button>
-  <span class="text-muted-foreground text-xs" title="Key (Settings → Song)">{project.key} {project.scale}</span>
+  <div class="bg-border w-px"></div>
 
-  <!-- On the right: the mic's note, tuning and level (a tuner). -->
-  <div class="ml-auto"><MicMeter /></div>
+  <!-- Count-in; the project: Save, Settings. -->
+  <div class="flex flex-col gap-1.5">
+    <!-- Count-in: bars of clicks before recording starts (also in Settings → Recording). -->
+    <div class="flex h-10 items-center gap-2" title="Bars of clicks before recording starts">
+      <span class="text-muted-foreground w-14 text-xs">Count-in</span>
+      <ToggleGroup.Root
+        type="single"
+        size="sm"
+        variant="outline"
+        class="flex-1"
+        disabled={recorder.recording}
+        bind:value={() => String(recordingSettings.countInBars), (v) => v && (recordingSettings.countInBars = Number(v))}
+      >
+        <ToggleGroup.Item class="flex-1" value="0" aria-label="No count-in">Off</ToggleGroup.Item>
+        <ToggleGroup.Item class="flex-1" value="1" aria-label="One bar">1</ToggleGroup.Item>
+        <ToggleGroup.Item class="flex-1" value="2" aria-label="Two bars">2</ToggleGroup.Item>
+      </ToggleGroup.Root>
+    </div>
+    <div class="grid h-10 grid-cols-2 gap-1.5">
+      <span id="tour-save" class="flex">
+        <Button class="h-10 w-full" variant="outline" onclick={save} disabled={recorder.recording}>Save</Button>
+      </span>
+      <span id="tour-settings" class="flex">
+        <Button class="h-10 w-full" variant="outline" onclick={() => (settingsOpen = true)} disabled={recorder.recording}>Settings</Button>
+      </span>
+    </div>
+  </div>
+
+  <div class="bg-border w-px"></div>
+
+  <!-- Time: tempo; time signature and metronome. -->
+  <div id="tour-song" class="flex flex-col gap-1.5">
+    <div class="flex h-10 items-center">
+      <!-- Tempo. Changing it while playing applies on the next Play. -->
+      <div id="tour-bpm"><BpmWheel disabled={recorder.recording} /></div>
+    </div>
+    <div class="flex h-10 items-center gap-2">
+      <TimeSignatureInput disabled={recorder.recording} />
+      <button
+        class="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-xs {recordingSettings.metronome ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}"
+        onclick={toggleMetronome}
+        aria-pressed={recordingSettings.metronome}
+        title="Metronome {recordingSettings.metronome ? 'on' : 'off'}"
+      >
+        <!-- A metronome: the case, and its pendulum. -->
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 3h6l4 18H5L9 3z" />
+          <path d="M12 17l5-11" />
+          <path d="M8 17h8" />
+        </svg>
+        Click
+      </button>
+    </div>
+  </div>
+
+  <div class="bg-border w-px"></div>
+
+  <!-- Sound: master volume, key shift (semitones), tuning (cents). Full knobs. -->
+  <div id="tour-sound" class="flex items-center gap-3">
+    <div title="Master volume: everything you hear">
+      <Knob label="Master" size={40} bind:value={project.masterVolume} min={-40} max={6} step={0.5} defaultValue={0} format={(v) => `${v > 0 ? '+' : ''}${v} dB`} />
+    </div>
+    <div title="Key shift: moves every melody and voice recording up or down (drums stay)">
+      <Knob label="Key" size={40} bind:value={project.transpose} min={-12} max={12} step={1} defaultValue={0} format={formatSemis} />
+    </div>
+    <div title="Tuning: fine shift of every instrument and voice (double-click: back to A440)">
+      <Knob label="Tune" size={40} bind:value={project.detune} min={-100} max={100} step={1} defaultValue={0} format={formatCents} />
+    </div>
+  </div>
+
+  <div class="bg-border w-px"></div>
+
+  <!-- Out: MIDI; help: Tour. -->
+  <div class="flex flex-col gap-1.5">
+    <Button
+      class="h-10"
+      variant="outline"
+      onclick={exportMidi}
+      disabled={recorder.recording || !project.tracks.some((t) => t.kind === 'midi' && t.clips.some((c) => c.notes.length))}
+      title="Export MIDI: download every melody track's notes as a MIDI file">MIDI ↓</Button
+    >
+    <Button class="h-10" variant="ghost" onclick={startTour} disabled={recorder.recording} title="The guided tour">Tour</Button>
+  </div>
+
+  <!-- On the right: the mic (a tuner); where the playhead is, the shift keys, the key. -->
+  <div class="ml-auto flex flex-col items-end gap-1.5">
+    <div class="flex h-10 items-center"><MicMeter /></div>
+    <div class="text-muted-foreground flex h-10 items-center gap-3 text-xs">
+      <!-- While recording a melody: the shift held now (shift keys, music/shift-keys.ts). -->
+      {#if shiftKeys.active}
+        <span
+          class="rounded px-2 py-1 font-mono {shiftKeys.shift ? 'bg-amber-500 text-white' : 'bg-muted'}"
+          title="Hold 1–9 / 0 (+ semitones), with − to go down; Z X C V: −2 −1 +1 +2 octaves; ` held: slide to the new note"
+        >
+          shift {formatShift(shiftKeys.shift)}{shiftKeys.slide ? ' · slide' : ''}
+        </span>
+      {/if}
+      <span class="font-mono">
+        {#if recorder.countingIn && recorder.beat !== null}
+          count-in {recorder.beat + 1}
+        {:else if playhead.running}
+          {position}
+        {:else}
+          stopped
+        {/if}
+      </span>
+      <span title="Key (Settings → Song)">{project.key} {project.scale}</span>
+    </div>
+  </div>
 
   <!-- Messages (saved, mic blocked…) as a toast: they don't push the bar around. -->
   {#if message}

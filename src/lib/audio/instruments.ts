@@ -10,7 +10,9 @@ import { initAudio } from './engine';
 import { presetOptions, type EngineType, type InstrumentPreset } from '$lib/music/instruments';
 import { sampleSet, sampleUrls } from '$lib/music/samples';
 import { midiToHz } from '$lib/music/tuning';
-import type { DrumSound } from '$lib/music/drums';
+import type { DrumSound, SynthDrum } from '$lib/music/drums';
+import { drumSample } from '$lib/music/drum-samples';
+import { userSampleBuffer } from '$lib/state/user-samples.svelte';
 
 // A synth: attack, release, change pitch, bend pitch.
 export type SynthInstrument = Tone.Synth | Tone.MonoSynth | Tone.FMSynth | Tone.AMSynth | Tone.DuoSynth | Tone.MembraneSynth;
@@ -38,12 +40,26 @@ export function loadSamples(id: string): Promise<Record<string, AudioBuffer>> {
 
 // Loads every sampled instrument these presets use.
 export async function loadPresets(presets: InstrumentPreset[]) {
-  await Promise.all(presets.filter((p) => p.engine === 'sampler').map((p) => loadSamples(String(p.params.sample ?? 'piano'))));
+  await Promise.all(
+    presets
+      .filter((p) => p.engine === 'sampler')
+      .map((p) => {
+        const id = String(p.params.sample ?? 'piano');
+        return id.startsWith('u:') ? userSampleBuffer(id) : loadSamples(id);
+      })
+  );
 }
 
 function createSampler(preset: InstrumentPreset): Tone.Sampler {
   const id = String(preset.params.sample ?? 'piano');
   const sampler = new Tone.Sampler();
+  // One of your sounds: a single recording, played at other pitches from its own note.
+  if (id.startsWith('u:')) {
+    userSampleBuffer(id).then((buffer) => {
+      if (buffer && !sampler.disposed) sampler.add(String(preset.params.root ?? 'C4') as Tone.Unit.Note, buffer);
+    });
+    return sampler;
+  }
   // Loaded already (loadPresets): the recordings go in straight away. Otherwise as they arrive.
   loadSamples(id).then(
     (buffers) => {
@@ -110,6 +126,7 @@ export async function previewNote(preset: InstrumentPreset, pitch: number) {
   if (preview?.key !== key) {
     preview?.instrument.dispose();
     preview = { key, instrument: createInstrument(preset).toDestination() };
+    await new Promise((r) => setTimeout(r, 0)); // a sampler takes its (loaded) recordings a moment later
   }
   lastPreview = Math.max(Tone.now(), lastPreview + 0.01);
   preview.instrument.triggerAttackRelease(midiToHz(pitch), 0.5, lastPreview);
@@ -148,7 +165,57 @@ function cymbal(decay: number, frequency: number, volume: number, resonance = 40
   return drum(synth, (time) => synth.triggerAttackRelease(frequency, decay, time));
 }
 
+// Plays a drum sound once, straight to the speakers (the sound browser's ▶).
+export async function previewDrum(sound: DrumSound) {
+  await initAudio();
+  if (sound.startsWith('s:') || sound.startsWith('u:')) await loadDrumSound(sound);
+  const d = createDrum(sound);
+  d.output.toDestination();
+  setTimeout(() => d.play(Tone.now() + 0.02), 0);
+  setTimeout(() => d.dispose(), 4000);
+}
+
+// ---------- Recorded drums (sample kits, your sounds) ----------
+const drumBuffers = new Map<string, Promise<AudioBuffer | null>>();
+
+// A recorded drum sound's audio (downloaded / read once, then kept).
+export function loadDrumSound(sound: string): Promise<AudioBuffer | null> {
+  let loading = drumBuffers.get(sound);
+  if (!loading) {
+    if (sound.startsWith('u:')) loading = userSampleBuffer(sound);
+    else {
+      const sample = drumSample(sound);
+      loading = sample ? Tone.ToneAudioBuffer.fromUrl(sample.url).then((b) => b.get() ?? null, () => null) : Promise.resolve(null);
+    }
+    drumBuffers.set(sound, loading);
+  }
+  return loading;
+}
+
+// A recorded sound as a Drum: each hit is its own one-shot player, so a cymbal rings on
+// under the next hit. Silent until its audio has loaded (Play waits for it).
+function recordedDrum(sound: string): Drum {
+  const output = new Tone.Gain();
+  let buffer: AudioBuffer | null = null;
+  loadDrumSound(sound).then((b) => (buffer = b));
+  return {
+    output,
+    play: (time) => {
+      if (!buffer) return;
+      const hit = new Tone.ToneBufferSource(buffer).connect(output);
+      hit.onended = () => hit.dispose();
+      hit.start(time);
+    },
+    dispose: () => output.dispose()
+  };
+}
+
 export function createDrum(sound: DrumSound): Drum {
+  if (sound.startsWith('s:') || sound.startsWith('u:')) return recordedDrum(sound);
+  return synthDrum(sound as SynthDrum);
+}
+
+function synthDrum(sound: SynthDrum): Drum {
   switch (sound) {
     case 'kick': {
       const synth = new Tone.MembraneSynth();

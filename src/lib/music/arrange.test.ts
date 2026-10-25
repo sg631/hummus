@@ -57,7 +57,7 @@ describe('arrangement', () => {
   });
 
   const song = (): Project => ({
-    name: 's', bpm: 120, timeSignature: [4, 4], key: 'C', scale: 'major', detune: 0, instruments: [],
+    name: 's', bpm: 120, timeSignature: [4, 4], key: 'C', scale: 'major', detune: 0, transpose: 0, masterVolume: 0, instruments: [],
     tracks: [
       { id: 'm', kind: 'midi', name: 'M', volume: 0, pan: 0, mute: false, swing: 0.5, swingUnit: 8, effects: [], instrument: 'piano',
         clips: [clip], placements: [{ id: 'p1', clipId: 'c', start: 0 }, { id: 'p2', clipId: 'c', start: BAR * 2 }], current: 'c' },

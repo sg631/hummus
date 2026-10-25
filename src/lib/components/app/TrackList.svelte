@@ -2,7 +2,8 @@
   The tracks, one card each, and buttons to add tracks.
   - click a card's name to select the track (the editor and Record use it); double-click
     (or right-click → Rename) to rename it
-  - M mutes, S solos (only soloed tracks play), ⧉ duplicates, ✕ deletes
+  - ▾ folds a card to its title row (▸ opens it); M mutes, S solos (only soloed tracks
+    play), ⧉ duplicates, ✕ deletes
   - melody tracks: instrument (✎ designs your own), and Allow Polyphony (multiple notes at
     once, e.g. chords; no pitch bends)
   - knobs: volume, pan, swing (melody and drums); drag up/down, double-click or
@@ -16,13 +17,12 @@
   - Changing a track (track.mute = true) updates the screen: tracks live in $state.
 -->
 <script lang="ts">
-  import Dropdown from './Dropdown.svelte';
   import { tick } from 'svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Knob } from '$lib/components/ui/knob/index.js';
   import { Switch } from '$lib/components/ui/switch/index.js';
   import { applyMix } from '$lib/audio/mixer';
-  import { BUILT_IN_PRESETS, isSampled } from '$lib/music/instruments';
+  import { presetById } from '$lib/music/instruments';
   import type { Track } from '$lib/music/types';
   import { contextMenu, type MenuItem } from '$lib/state/context-menu.svelte';
   import {
@@ -36,6 +36,7 @@
   } from '$lib/state/project.svelte';
   import EffectList from './EffectList.svelte';
   import InstrumentDialog from './InstrumentDialog.svelte';
+  import InstrumentBrowser from './InstrumentBrowser.svelte';
 
   // Runs again whenever any volume, pan, mute, solo, effect or instrument changes (it
   // reads them all), so changes are heard straight away while playing.
@@ -52,6 +53,11 @@
   });
 
   let instrumentOpen = $state(false);
+  let browserOpen = $state(false);
+  function browseInstrument(id: string) {
+    instrumentTrack = id;
+    browserOpen = true;
+  }
   let instrumentTrack = $state<string | null>(null);
 
   // ---------- Renaming ----------
@@ -70,6 +76,7 @@
 
   function menuFor(track: Track): MenuItem[] {
     return [
+      { label: track.collapsed ? 'Expand' : 'Collapse', action: () => (track.collapsed = !track.collapsed) },
       { label: 'Rename', action: () => rename(track.id) },
       { label: 'Duplicate', action: () => duplicateTrack(track.id) },
       { separator: true },
@@ -78,7 +85,8 @@
       ...(track.kind === 'midi'
         ? [
             { separator: true },
-            { label: 'Instrument…', action: () => openInstrument(track.id) },
+            { label: 'Choose instrument…', action: () => browseInstrument(track.id) },
+            { label: 'Edit instrument…', action: () => openInstrument(track.id) },
             { label: 'Allow Polyphony (multiple notes)', checked: !!track.poly, action: () => (track.poly = !track.poly) }
           ]
         : []),
@@ -101,6 +109,9 @@
   id="tour-tracks"
   class="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto border-r p-3"
   use:contextMenu={() => [
+    { label: 'Collapse all', action: () => project.tracks.forEach((t) => (t.collapsed = true)) },
+    { label: 'Expand all', action: () => project.tracks.forEach((t) => (t.collapsed = false)) },
+    { separator: true },
     { label: 'Add melody track', action: () => addMidiTrack() },
     { label: 'Add voice track', action: () => addVoiceTrack() },
     { label: 'Add drum track', action: () => addDrumTrack() }
@@ -114,6 +125,15 @@
       use:contextMenu={() => menuFor(track)}
     >
       <div class="flex items-center gap-1">
+        <!-- Fold the card down to this row (or open it again). -->
+        <button
+          class="text-muted-foreground hover:text-foreground w-4 shrink-0 text-xs"
+          onclick={() => (track.collapsed = !track.collapsed)}
+          aria-expanded={!track.collapsed}
+          title={track.collapsed ? 'Show the track’s controls' : 'Fold the track to its title'}
+        >
+          {track.collapsed ? '▸' : '▾'}
+        </button>
         {#if renaming === track.id}
           <input
             bind:this={nameInput}
@@ -149,19 +169,14 @@
         <button class="text-muted-foreground hover:text-foreground h-6 w-6 text-sm" onclick={() => removeTrack(track.id)} aria-label="Delete track" title="Delete track">✕</button>
       </div>
 
+      {#if !track.collapsed}
       {#if track.kind === 'midi'}
         <!-- Quick pick of a preset, or ✎ for the instrument window (make and edit presets). -->
         <div class="flex items-center gap-1 text-xs">
-          <Dropdown
-            class="min-w-0 flex-1"
-            bind:value={track.instrument}
-            ariaLabel="Instrument"
-            options={[
-              ...BUILT_IN_PRESETS.filter((p) => !isSampled(p)).map((p) => ({ value: p.id, label: p.name, group: 'Synths' })),
-              ...BUILT_IN_PRESETS.filter(isSampled).map((p) => ({ value: p.id, label: p.name, group: 'Sampled' })),
-              ...project.instruments.map((p) => ({ value: p.id, label: p.name, group: 'Yours' }))
-            ]}
-          />
+          <!-- The instrument: opens the instrument browser (search, presets, your sounds). -->
+          <Button size="sm" variant="outline" class="h-7 min-w-0 flex-1 justify-between px-2 text-xs" onclick={() => browseInstrument(track.id)} title="Choose the instrument">
+            <span class="truncate">{presetById(project.instruments, track.instrument).name}</span><span class="text-muted-foreground">▾</span>
+          </Button>
           <Button size="sm" variant="ghost" class="h-6 px-2" onclick={() => openInstrument(track.id)} aria-label="Edit instrument">✎</Button>
         </div>
         <label class="flex items-center gap-2 text-xs" title="Notes can overlap (chords, layers). Sung slides and vibrato aren't played.">
@@ -180,6 +195,7 @@
       </div>
 
       <EffectList ownerId={track.id} effects={track.effects} />
+      {/if}
     </div>
   {:else}
     <p class="text-muted-foreground text-sm">No tracks yet.</p>
@@ -193,3 +209,4 @@
 </aside>
 
 <InstrumentDialog bind:open={instrumentOpen} trackId={instrumentTrack} />
+<InstrumentBrowser bind:open={browserOpen} trackId={instrumentTrack} onedit={() => (instrumentOpen = true)} />

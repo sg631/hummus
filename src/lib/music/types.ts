@@ -127,6 +127,8 @@ export interface Project {
   key: string;                  // tonic, e.g. 'C', 'F#' (KEY_TONICS in key.ts)
   scale: string;                // e.g. 'major', 'minor' (SCALES in key.ts)
   detune: number;               // cents, the whole song's tuning shift (−100 … 100; 0 = A440)
+  transpose: number;            // semitones, the whole song's key shift (−12 … 12); drums aren't shifted
+  masterVolume: number;         // dB, everything (0 = as mixed)
   instruments: InstrumentPreset[]; // your own instrument presets (built-in ones: instruments.ts)
   tracks: Track[];
 }
@@ -143,6 +145,7 @@ interface TrackBase {
   pan: number;    // -1 left … 0 centre … 1 right
   mute: boolean;
   solo?: boolean; // when any track is soloed, only soloed tracks play
+  collapsed?: boolean; // shown as just its title row in the track list
   // Swing on this track only (0.5 = straight … 0.75 hard swing; see drums.ts). Melody and
   // drum tracks; voice recordings play as recorded.
   swing: number;

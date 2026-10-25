@@ -205,7 +205,7 @@
   }
 
   function preview(pitch: number) {
-    previewNote($state.snapshot(trackPreset(track)), pitch + project.detune / 100);
+    previewNote($state.snapshot(trackPreset(track)), pitch + project.transpose + project.detune / 100);
   }
 
   // After an edit by hand: clips grow to fit, and recorded clips stop re-quantizing.

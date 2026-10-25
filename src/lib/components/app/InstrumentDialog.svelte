@@ -220,7 +220,7 @@
               onpointerdown={async () => {
                 loading = true;
                 try {
-                  await previewNote($state.snapshot(preset), pitch + project.detune / 100);
+                  await previewNote($state.snapshot(preset), pitch + project.transpose + project.detune / 100);
                 } finally {
                   loading = false;
                 }

@@ -16,11 +16,13 @@
   import Dropdown from './Dropdown.svelte';
   import * as ToggleGroup from '$lib/components/ui/toggle-group/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
-  import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import { Knob } from '$lib/components/ui/knob/index.js';
   import EffectList from './EffectList.svelte';
+  import SoundBrowser from './SoundBrowser.svelte';
+  import { drumSample } from '$lib/music/drum-samples';
+  import { userSampleName } from '$lib/state/user-samples.svelte';
   import { contextMenu } from '$lib/state/context-menu.svelte';
-  import { DRUM_SOUNDS, drumName, STEP_TICKS, stepsPerBar, stepsPerBeat, type DrumSound, type SwingUnit } from '$lib/music/drums';
+  import { drumName, STEP_TICKS, stepsPerBar, stepsPerBeat, type DrumSound, type SwingUnit } from '$lib/music/drums';
   import { placementAt, placementLength } from '$lib/music/arrange';
   import { measuredSwing } from '$lib/music/quantize';
   import { barTicks } from '$lib/music/time';
@@ -32,6 +34,25 @@
 
   const MAX_BARS = 8;
   let fxOpen = $state<string | null>(null); // the row whose effects are showing
+
+  // The sound browser: for a row (change its sound) or for a new row (null).
+  let browserOpen = $state(false);
+  let browsingRow = $state<string | null>(null);
+  function browse(rowId: string | null) {
+    browsingRow = rowId;
+    browserOpen = true;
+  }
+  function picked(sound: DrumSound) {
+    const row = track.rows.find((r) => r.id === browsingRow);
+    if (row) row.sound = sound;
+    else addDrumRow(track, sound);
+  }
+  // A sound's name, whichever kind it is (recorded kits get their kit too).
+  const soundName = (sound: string) =>
+    drumName(sound as DrumSound, (id) => {
+      const s = drumSample(id);
+      return s ? `${s.kit.replace('Acoustic kit: ', '')} ${s.name}` : userSampleName(id);
+    });
 
   // The pattern being edited (always one: tracks are made with one, older saves upgraded).
   const pattern = $derived(track.patterns.find((p) => p.id === track.current) ?? track.patterns[0]);
@@ -174,7 +195,10 @@
           { label: 'Remove sound', danger: true, action: () => removeDrumRow(track, row.id) }
         ]}
       >
-        <Dropdown class="w-28" bind:value={row.sound} ariaLabel="Sound" options={DRUM_SOUNDS.map((d) => ({ value: d.type, label: d.name }))} />
+        <!-- The row's sound: opens the sound browser to change it. -->
+        <Button size="sm" variant="outline" class="h-7 w-32 justify-between px-2 text-xs" title="Change this row's sound" onclick={() => browse(row.id)}>
+          <span class="truncate">{soundName(row.sound)}</span><span class="text-muted-foreground">▾</span>
+        </Button>
         <div title="Volume"><Knob size={24} bind:value={row.volume} min={-30} max={6} step={1} defaultValue={0} format={(v) => `${v > 0 ? '+' : ''}${v}dB`} /></div>
         <div title="Pan"><Knob size={24} bind:value={row.pan} min={-1} max={1} step={0.05} defaultValue={0} format={(v) => (Math.abs(v) < 0.025 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`)} /></div>
         <div title="Swing for this sound (right-click the row: follow the track's)" class={row.swing === undefined ? 'opacity-50' : ''}>
@@ -205,24 +229,14 @@
       </div>
       {#if fxOpen === row.id}
         <div class="mb-2 ml-8 w-72 rounded border p-2">
-          <div class="text-muted-foreground mb-1 text-xs">Effects on {drumName(row.sound)}</div>
+          <div class="text-muted-foreground mb-1 text-xs">Effects on {soundName(row.sound)}</div>
           <EffectList ownerId={row.id} effects={row.effects} />
         </div>
       {/if}
     {/each}
   </div>
 
-  <!-- Add a sound: a menu of every drum sound. -->
-  <DropdownMenu.Root>
-    <DropdownMenu.Trigger>
-      {#snippet child({ props })}
-        <Button {...props} size="sm" variant="outline" class="w-fit">+ Add sound</Button>
-      {/snippet}
-    </DropdownMenu.Trigger>
-    <DropdownMenu.Content class="max-h-80">
-      {#each DRUM_SOUNDS as d (d.type)}
-        <DropdownMenu.Item onSelect={() => addDrumRow(track, d.type as DrumSound)}>{d.name}</DropdownMenu.Item>
-      {/each}
-    </DropdownMenu.Content>
-  </DropdownMenu.Root>
+  <!-- Add a sound: the sound browser (kits, 808, percussion, your sounds, the slicer). -->
+  <Button size="sm" variant="outline" class="w-fit" onclick={() => browse(null)}>+ Add sound</Button>
+  <SoundBrowser bind:open={browserOpen} {track} title={browsingRow ? 'Change the sound' : 'Add a sound'} onpick={picked} />
 </div>

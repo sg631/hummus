@@ -28,6 +28,8 @@ export const project = $state<Project>({
   key: 'C',
   scale: 'major',
   detune: 0,
+  transpose: 0,
+  masterVolume: 0,
   instruments: [],
   tracks: []
 });
@@ -375,6 +377,8 @@ export function loadProject() {
     }
     saved.instruments ??= []; // saved before instrument presets existed
     saved.detune ??= 0;
+    saved.transpose ??= 0; // saved before key shift and master volume
+    saved.masterVolume ??= 0;
     Object.assign(project, saved);
   } catch {
     console.warn('The saved project could not be read; starting a new one.');

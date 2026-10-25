@@ -187,6 +187,35 @@ over outer ones (the action is a native listener that stops the event).
   vibrato. License: CC-BY 3.0, so the credit (`SAMPLES_CREDIT`) must stay visible; the
   instrument window shows it.
 
+**Top bar layout**: groups of two rows with dividers: Play over Record; Pattern/Song over
+Over/Replace; Count-in over Save and Settings; BPM over time signature and Click; Master
+volume, Key shift (±12 semitones: melodies and voice recordings, not drums) and Tune
+knobs; MIDI over Tour; the mic meter over the position, shift badge and key. Master volume
+is `project.masterVolume` (`setMasterVolume`), key shift `project.transpose` (added to the
+tuning when scheduling).
+
+**Drum sound library** (`music/drum-samples.ts`, `SoundBrowser.svelte`): two recorded
+acoustic kits (AVL Drumkits, CC-BY-SA 3.0), the TR-808 (Michael Fischer, no restrictions)
+and percussion (VCSL, CC0), downloaded from jsDelivr when first used (`loadDrumSound`;
+Play and Record wait for them), each hit a one-shot player so cymbals ring on. A row's
+sound button and "+ Add sound" open the browser: search, ▶ to listen, click to use; the
+credit is shown there.
+- **Your sounds** (`state/user-samples.svelte.ts`): uploaded audio files and slices, kept
+  in this browser's IndexedDB (Dexie), so they're in every project here but not in the
+  project save (a project using them elsewhere plays them silent). Ids start with `u:`.
+- **Slicer** (`Slicer.svelte`, `music/slice.ts`): open a file or a voice recording; hits
+  are found where loudness jumps (`findOnsets`, Sensitivity); click markers to remove,
+  the waveform to add, a slice's number to hear it; "Add N sounds" keeps each slice and
+  adds it as a drum row.
+
+**Instrument browser** (`InstrumentBrowser.svelte`, the track's instrument button):
+search over synths, sampled instruments, your presets and your sounds (an uploaded
+recording played at every pitch: a sampler preset with `sample: 'u:…'` and a root note);
+▶ to listen; "+ New synth preset" and "Upload a sample…" open the editor afterwards.
+
+**Track cards** fold to their title row (▾ / ▸, `track.collapsed`; right-click the list:
+Collapse all / Expand all).
+
 **Top bar** (`TransportBar.svelte`): Play, Record, the tempo wheel, the time signature
 (`TimeSignatureInput.svelte`: two number fields stacked like sheet music; the bottom one only takes 2, 4, 8 or 16,
 arrow keys step between them and other numbers snap to the nearest), the count-in
@@ -448,6 +477,7 @@ editing them is how things break:
 | `state/tour.svelte.ts` | Whether the tour has been seen. |
 | `state/context-menu.svelte.ts`, `ContextMenu.svelte` | The right-click menu system. |
 | `state/takes.svelte.ts` | The last take per track, in memory. |
+| `music/drum-samples.ts`, `music/slice.ts`, `state/user-samples.svelte.ts` | Drum sample catalogue (all links checked), slicing (tested), your sounds in IndexedDB. |
 | `music/arrange.ts`, `music/looper.ts` | Placements → what plays; pattern mode; looper layers (tested). |
 | `state/view.svelte.ts` | Editor or Playlist in the main area. |
 | `music/shift-keys.ts`, `state/shift-keys.svelte.ts` | Shift keys while recording (tested). |

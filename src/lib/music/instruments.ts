@@ -151,6 +151,10 @@ export const ENGINES = [
         labels: Object.fromEntries(SAMPLE_SETS.map((s) => [s.id, s.name])),
         default: 'piano'
       },
+      {
+        kind: 'choice', key: 'root', label: 'Note it plays at (your sounds)', group: 'Sound', option: false,
+        options: ['C2', 'C3', 'A3', 'C4', 'E4', 'G4', 'A4', 'C5', 'C6'], default: 'C4'
+      },
       num('attack', 'Fade in', 'Envelope', 0, 1, 0.005, 0, 's'),
       num('release', 'Fade out', 'Envelope', 0.01, 5, 0.01, 1, 's', true)
     ]

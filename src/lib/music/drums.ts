@@ -37,13 +37,18 @@ export const DRUM_SOUNDS = [
   { type: 'shaker', name: 'Shaker' }
 ] as const;
 
-export type DrumSound = (typeof DRUM_SOUNDS)[number]['type'];
+// A synthesized sound's type ('kick'…), a recorded one ('s:…', drum-samples.ts), or one
+// you added ('u:…', state/user-samples.svelte.ts).
+export type SynthDrum = (typeof DRUM_SOUNDS)[number]['type'];
+export type DrumSound = SynthDrum | `s:${string}` | `u:${string}`;
 
 // What a new drum track starts with.
 export const DEFAULT_KIT: DrumSound[] = ['kick', 'snare', 'hihat'];
 
-export function drumName(sound: DrumSound): string {
-  return DRUM_SOUNDS.find((d) => d.type === sound)?.name ?? sound;
+// A sound's name. Recorded and added sounds get theirs from where they're listed
+// (`lookup`: the drum sample catalogue and your sounds), synthesized ones from here.
+export function drumName(sound: DrumSound, lookup?: (id: string) => string | undefined): string {
+  return DRUM_SOUNDS.find((d) => d.type === sound)?.name ?? lookup?.(sound) ?? (sound.startsWith('u:') ? 'Your sound' : sound);
 }
 
 // ---------- Swing ----------

@@ -16,7 +16,7 @@ import * as Tone from 'tone';
 import { initAudio } from './engine';
 import { createEffect, type EffectNode } from './effects';
 import { Metronome } from './metronome';
-import { applyPreset, createDrum, createInstrument, type Drum, loadPresets, needsNewInstrument, type Instrument } from './instruments';
+import { applyPreset, createDrum, createInstrument, loadDrumSound, type Drum, loadPresets, needsNewInstrument, type Instrument } from './instruments';
 import { presetById, type InstrumentPreset } from '$lib/music/instruments';
 import { scheduleClip, scheduleRecording } from './playback';
 import { STEP_TICKS, stepsPerBar, swingOffset } from '$lib/music/drums';
@@ -55,11 +55,12 @@ export function scheduleProject(project: Project, offsetTicks = 0) {
       const swing = { amount: track.swing, unit: track.swingUnit };
       // The playlist: each placement of a clip, looped or cut to its length.
       const placed = expandPlacements(track.clips, track.placements, barTicks(project.timeSignature));
-      for (const clip of placed) disposables.push(scheduleClip(clip, synth, offsetTicks, project.detune, swing));
+      const shift = project.detune + project.transpose * 100; // tuning + key shift, in cents
+      for (const clip of placed) disposables.push(scheduleClip(clip, synth, offsetTicks, shift, swing));
     } else if (track.kind === 'voice') {
       for (const clip of track.clips) {
         const rate = project.bpm / clip.recordedBpm;
-        disposables.push(scheduleRecording(clip.audio, clip.sampleRate, rate, 0, input, offsetTicks + clip.start, project.detune, clip.edit));
+        disposables.push(scheduleRecording(clip.audio, clip.sampleRate, rate, 0, input, offsetTicks + clip.start, project.detune + project.transpose * 100, clip.edit));
       }
     } else {
       scheduleDrums(project, track, input, offsetTicks);
@@ -72,7 +73,8 @@ export function scheduleProject(project: Project, offsetTicks = 0) {
 // later calls return straight away). Call before playing or recording.
 export async function loadProjectSamples(project: Project) {
   const presets = project.tracks.flatMap((t) => (t.kind === 'midi' ? [presetById(project.instruments, t.instrument)] : []));
-  await loadPresets(presets);
+  const drums = project.tracks.flatMap((t) => (t.kind === 'drums' ? t.rows.map((r) => r.sound).filter((s) => s.startsWith('s:') || s.startsWith('u:')) : []));
+  await Promise.all([loadPresets(presets), ...drums.map((d) => loadDrumSound(d))]);
 }
 
 // A drum track's loop: every sixteenth, play the rows that are on at this step of the bar.
@@ -166,6 +168,11 @@ export function stopProject() {
   for (const d of disposables) d.dispose();
   disposables = [];
   chains.clear();
+}
+
+// The master volume (everything, after every track): applied straight away, playing or not.
+export function setMasterVolume(db: number) {
+  Tone.getDestination().volume.value = db;
 }
 
 // Copies each track's volume, mute and effects onto its playing chain. Settings change

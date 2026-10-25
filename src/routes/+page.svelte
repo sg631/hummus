@@ -13,13 +13,17 @@
   import VoiceEditor from '$lib/components/app/VoiceEditor.svelte';
   import Playlist from '$lib/components/app/Playlist.svelte';
   import { view } from '$lib/state/view.svelte';
+  import { loadUserSamples } from '$lib/state/user-samples.svelte';
   import { onMount } from 'svelte';
   import { addNoteClip, addVoiceClip, loadProject, project, selectedTrack } from '$lib/state/project.svelte';
 
   const track = $derived(selectedTrack());
 
   // When the page opens: bring back the last saved project (Save is in the TransportBar).
-  onMount(loadProject);
+  onMount(() => {
+    loadProject();
+    loadUserSamples(); // your uploaded sounds (this browser's database)
+  });
 
   // Development only: lets automated browser tests reach the app's state (window.__hum).
   if (import.meta.env.DEV) (window as unknown as { __hum: object }).__hum = { project, addNoteClip, addVoiceClip };
