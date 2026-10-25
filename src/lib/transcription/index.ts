@@ -14,7 +14,7 @@ export type { Analysis, DetectedNote, PitchTrack, TranscribedNote, Transcription
 export { DEFAULT_NOTE_SETTINGS, buildNotes, type NoteSettings } from './notes';
 export { DEFAULT_EXPRESSION_SETTINGS, interpretNote, type ExpressionSettings } from './expression';
 export { toClip, toNotes } from './clip';
-export { DEFAULT_TAKE_SETTINGS, takeToClip, type TakeSettings } from './take-to-clip';
+export { DEFAULT_TAKE_SETTINGS, pitchLine, takeToClip, type TakeSettings } from './take-to-clip';
 export { LiveTranscriber } from './live';
 export { transcribeAudio } from './transcribe';
 export { encodeTake, decodeTakeAudio, type TakeFile } from './take-file';

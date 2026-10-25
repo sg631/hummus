@@ -54,6 +54,7 @@
 	"dependencies": {
 		"@audio/neural-pitch": "^0.1.1",
 		"@audio/pitch-pyin": "2.1.0",
+		"@floating-ui/dom": "^1.8.0",
 		"@tonejs/midi": "^2.0.28",
 		"dexie": "^4.4.6",
 		"pitchy": "^4.1.0",

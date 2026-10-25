@@ -38,6 +38,7 @@ export class Recorder {
   countInBeats = $state(0);
   countingIn = $derived(this.recording && this.beat !== null && this.beat < this.countInBeats);
   live = $state.raw<Transcription | null>(null); // the take so far, while recording
+  takeStart = 0; // AudioContext time of the take's time 0 (the downbeat after the count-in)
 
   private transcriber: LiveTranscriber | null = null;
   private metronome: Metronome | null = null;
@@ -72,6 +73,7 @@ export class Recorder {
     // the take's time 0 is bar 1, beat 1 and the quantize grid lines up with the clicks.
     const startAt = Tone.now() + 0.1;
     const downbeat = startAt + ticksToSeconds(countInTicks, options.bpm);
+    this.takeStart = downbeat;
     transport.start(startAt);
 
     this.transcriber = new LiveTranscriber(liveInput, (t) => (this.live = t));
@@ -87,6 +89,11 @@ export class Recorder {
     const { bpm, timeSignature } = this.options;
     this.reset();
     return { take, bpm, timeSignature };
+  }
+
+  // Turn the click on or off while recording.
+  setMetronome(on: boolean) {
+    if (this.metronome) this.metronome.enabled = on;
   }
 
   cancel() {

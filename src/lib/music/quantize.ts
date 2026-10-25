@@ -1,6 +1,6 @@
 import { cellAt, cellStep, fitRhythm, snapToCell, type GridCell } from './rhythm';
 import { PPQ, type TimeSignature } from './time';
-import type { Note } from './types';
+import type { ClipSource, Note } from './types';
 
 // Grid "Auto": each beat gets the subdivision the timing fits best (straight, triplet,
 // swung), following the time signature; see rhythm.ts.
@@ -89,6 +89,17 @@ function quantizeAuto(notes: Note[], s: QuantizeSettings, timeSignature: TimeSig
     if (end <= start) end = start + 1;
     return { ...n, start, duration: end - start };
   });
+}
+
+// A recorded clip's notes, quantized from how they were sung with its source's settings.
+export function requantize(source: ClipSource): Note[] {
+  return removeOverlaps(quantizeNotes(source.notes, source.quantize, source.timeSignature, source.bpm));
+}
+
+// The swing the singer used (0.5 straight … 0.75), or null if there are too few off-beat
+// eighths to tell.
+export function measuredSwing(source: ClipSource): number | null {
+  return analyzeRhythm(source.notes, { ...source.quantize, swing: 'auto' }, source.timeSignature, source.bpm).measuredSwing;
 }
 
 // Singing is one note at a time: trim any note that runs into the next.
