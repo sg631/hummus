@@ -5,17 +5,17 @@
 // ambiguous, the note says so (`alternatives`) instead of the transcription guessing.
 import { median } from '$lib/music/math';
 import { dbToVelocity, toDecibels } from '$lib/music/tuning';
-import type { NoteCurve } from '$lib/music/types';
+import type { Articulation, NoteCurve } from '$lib/music/types';
 import type { Analysis, DetectedNote, PitchTrack, TranscribedNote } from './types';
 
 export interface NoteSettings {
-  minNoteSec: number;      // shorter notes are dropped (the note model already drops < 0.1 s)
+  minNoteSec: number;      // shorter notes are dropped (the note model already drops < 0.05 s)
   relativeTuning: boolean; // name notes relative to the singer's own tuning, not A440
   referenceSec: number;    // how far (in time) other notes inform a note's tuning reference
 }
 
 export const DEFAULT_NOTE_SETTINGS: NoteSettings = {
-  minNoteSec: 0.1,
+  minNoteSec: 0.06, // fast runs and ornaments go down to ~70 ms a note
   relativeTuning: true,
   referenceSec: 8
 };
@@ -23,6 +23,14 @@ export const DEFAULT_NOTE_SETTINGS: NoteSettings = {
 const REFERENCE_PRIOR_SEC = 0.5; // the tuning reference leans to A440 like this much singing would
 const LEVEL_WINDOW_SEC = 0.02;   // loudness is measured over this much audio around each frame
 const AMBIGUOUS_CENTS = 35;      // a note this far from its semitone could be the neighbour
+// Articulation.
+const LEGATO_GAP_SEC = 0.03;  // a slur into a note starting within this is legato
+const STACCATO_RATIO = 0.6;   // sounding at most this share of the time to the next note...
+const STACCATO_GAP_SEC = 0.06; // ...with at least this much rest after it, is staccato
+const ATTACK_SEC = 0.08;      // a note's attack: its first 80 ms
+const ACCENT_DB = 4;          // an attack this much louder than its neighbours' is an accent...
+const ACCENT_BODY_DB = 2;     // ...if it's also louder than the rest of its own note
+const NEIGHBOURS_SEC = 3;     // neighbours: notes starting within this
 
 const toMidi = (hz: number) => 69 + 12 * Math.log2(hz / 440);
 
@@ -36,7 +44,7 @@ export function buildNotes(
   const sung = kept.map((n) => toMidi(n.freq));
   const spans = kept.map((n) => ({ start: n.time, end: n.time + n.duration }));
 
-  return kept.map((n, i) => {
+  const built = kept.map((n, i) => {
     const referenceCents = s.relativeTuning ? tuningReference(i, spans, sung, s.referenceSec) : 0;
     const tuned = sung[i] - referenceCents / 100;
     const pitch = Math.round(tuned);
@@ -53,6 +61,46 @@ export function buildNotes(
       referenceCents
     };
   });
+  const attacks = built.map((n) => attackLevel(n.curve));
+  return built.map((n, i) => ({ ...n, articulation: articulation(i, kept, built, attacks) }));
+}
+
+// From how the note ended and what follows (legato, staccato), and its attack's level
+// against its neighbours' (accent). Measured, so any of it can be wrong on unclear audio.
+function articulation(
+  i: number,
+  detected: DetectedNote[],
+  notes: { start: number; end: number; curve: NoteCurve }[],
+  attacks: ({ peak: number; body: number } | null)[]
+): Articulation {
+  const n = notes[i];
+  const next = notes[i + 1];
+  let kind: Articulation['kind'] = 'normal';
+  if (next && detected[i].endedBy === 'slur' && next.start - n.end < LEGATO_GAP_SEC) kind = 'legato';
+  else if (
+    next &&
+    detected[i].endedBy !== 'slur' &&
+    (n.end - n.start) / (next.start - n.start) <= STACCATO_RATIO &&
+    next.start - n.end >= STACCATO_GAP_SEC
+  ) {
+    kind = 'staccato';
+  }
+
+  const own = attacks[i];
+  const others = attacks
+    .filter((a, j) => j !== i && a && Math.abs(notes[j].start - n.start) <= NEIGHBOURS_SEC)
+    .map((a) => a!.peak);
+  const accentDb = own && others.length >= 2 ? own.peak - median(others) : 0;
+  const accent = !!own && accentDb >= ACCENT_DB && own.peak - own.body >= ACCENT_BODY_DB;
+  return { kind, accent, accentDb: Math.round(accentDb * 10) / 10 };
+}
+
+// The loudest level in the note's attack, and the median after it (dB); null without levels.
+function attackLevel(curve: NoteCurve): { peak: number; body: number } | null {
+  const attack = curve.db.filter((d, k) => curve.t[k] < ATTACK_SEC && d > -Infinity);
+  const body = curve.db.filter((d, k) => curve.t[k] >= ATTACK_SEC && d > -Infinity);
+  if (!attack.length) return null;
+  return { peak: Math.max(...attack), body: body.length ? median(body) : Math.max(...attack) };
 }
 
 // The offset (cents from A440 semitones) the other notes share, weighted by length and

@@ -1,9 +1,13 @@
 import { Midi } from '@tonejs/midi';
+import { playedVelocity } from './articulation';
+import type { TimeSignature } from './time';
 import type { NoteClip } from './types';
 
-export function clipsToMidi(clips: NoteClip[], bpm: number): Blob {
+export function clipsToMidi(clips: NoteClip[], bpm: number, timeSignature: TimeSignature = [4, 4]): Blob {
   const midi = new Midi(); // 480 ticks per beat by default, same as yours
   midi.header.setTempo(bpm);
+  midi.header.timeSignatures.push({ ticks: 0, timeSignature });
+  midi.header.update();
   const track = midi.addTrack();
 
   for (const clip of clips) {
@@ -12,7 +16,7 @@ export function clipsToMidi(clips: NoteClip[], bpm: number): Blob {
         midi: n.pitch,
         ticks: clip.start + n.start,
         durationTicks: n.duration,
-        velocity: n.velocity
+        velocity: playedVelocity(n) // accents play harder
       });
     }
   }

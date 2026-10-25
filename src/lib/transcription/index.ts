@@ -6,7 +6,8 @@
 //   notes:  buildNotes(take, settings, { samples, sampleRate })               → TranscribedNote[] (re-run on settings change)
 //   clip:   toClip(notes, bpm, expressionSettings)                             → NoteClip (ticks)
 //
-// The analysis is pYIN + Tony's note model (@audio/pitch-pyin); see analyze.ts.
+// The analysis is pYIN's HMM on neural pitch (@audio/pitch-pyin + @audio/neural-pitch) and an
+// adapted Tony note model (note-model.ts); see analyze.ts. Notes carry articulation (notes.ts).
 
 export type { Analysis, DetectedNote, PitchTrack, TranscribedNote, Transcription } from './types';
 export { DEFAULT_NOTE_SETTINGS, buildNotes, type NoteSettings } from './notes';

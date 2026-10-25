@@ -1,3 +1,5 @@
+import type { TimeSignature } from './time';
+
 // ---------- Pitch input ----------
 
 export interface PitchFrame {
@@ -36,17 +38,35 @@ export interface NoteCurve {
 
 // ---------- What was meant (derived by the interpreter) ----------
 
+// A scoop into a note (or slide from the last), or a fall off it.
+export interface Gesture {
+  cents: number; // its furthest point from the note's pitch (−200: from two semitones below)
+  sec: number;   // how long it lasts
+}
+
 export interface Interpretation {
   pitch: number;       // intended MIDI note
   offsetCents: number; // how far off the note was sung (median of its middle)
   correction: number;  // 0–1, how much of that offset was corrected
-  driftCents: number;  // pitch change from the start to the end of the note's middle
+  driftCents: number;  // pitch change across the note's body (after it settles, before it leaves)
   vibrato: number;     // 0–1, how much of the sung vibrato was kept
-  drift: number;       // 0–1, how much slow movement (drift, scoops, fall-offs) was kept
+  drift: number;       // 0–1, how much slow wander inside the note was kept
+  gestures: number;    // 0–1, how much of its scoop and fall was kept
+  scoop?: Gesture;     // a clear scoop into it (or slide from the note before)
+  fall?: Gesture;      // a clear fall off it
   curve: number[];     // playback pitch in cents relative to `pitch`, one per curve frame
 }
 
 // ---------- Notes and clips ----------
+
+// How a note was sung, from the audio.
+export interface Articulation {
+  // legato: slurred into the next note (no new attack); staccato: cut short, then a rest;
+  // normal: anything else (a new attack, or held up to a rest).
+  kind: 'legato' | 'normal' | 'staccato';
+  accent: boolean;  // attacked clearly louder than the notes around it
+  accentDb: number; // how much louder its attack was than theirs (dB; 0 if unknown)
+}
 
 export interface Note {
   id: string;
@@ -57,6 +77,7 @@ export interface Note {
   velocity: number; // 0–1
   curve?: NoteCurve;
   interpretation?: Interpretation;
+  articulation?: Articulation;
 }
 
 export interface NoteClip {
@@ -74,7 +95,7 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   bpm: number;
-  timeSignature: [number, number];
+  timeSignature: TimeSignature;
   key: string;
   scale: string;
   tracks: Track[];

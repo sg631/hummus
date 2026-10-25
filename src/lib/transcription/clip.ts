@@ -17,7 +17,8 @@ export function toNotes(
     duration: Math.max(1, secondsToTicks(n.end - n.start, bpm)),
     velocity: n.velocity,
     curve: n.curve,
-    interpretation: interpretNote(n, s)
+    interpretation: interpretNote(n, s),
+    articulation: n.articulation
   }));
 }
 

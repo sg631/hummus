@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { interpretNote } from './expression';
+import { DEFAULT_EXPRESSION_SETTINGS, interpretNote } from './expression';
 import { DEFAULT_NOTE_SETTINGS, alternatives, buildNotes, tuningReference } from './notes';
 import type { Analysis } from './types';
 
@@ -109,7 +109,7 @@ describe('interpretNote', () => {
   });
 
   it('measures and corrects the offset', () => {
-    const interp = interpretNote(note, { correction: 1, vibrato: 1, drift: 1 });
+    const interp = interpretNote(note, { ...DEFAULT_EXPRESSION_SETTINGS, correction: 1, vibrato: 1, drift: 1 });
     expect(interp.offsetCents).toBeGreaterThan(20);
     expect(interp.offsetCents).toBeLessThan(40);
     const mid = interp.curve.slice(20, -20);
@@ -119,26 +119,26 @@ describe('interpretNote', () => {
   const range = (c: number[]) => Math.max(...c) - Math.min(...c);
 
   it('keeps vibrato by its own amount', () => {
-    expect(range(interpretNote(note, { correction: 1, vibrato: 1, drift: 0 }).curve)).toBeGreaterThan(50);
-    expect(range(interpretNote(note, { correction: 1, vibrato: 0, drift: 0 }).curve)).toBeLessThan(10);
+    expect(range(interpretNote(note, { ...DEFAULT_EXPRESSION_SETTINGS, correction: 1, vibrato: 1, drift: 0 }).curve)).toBeGreaterThan(50);
+    expect(range(interpretNote(note, { ...DEFAULT_EXPRESSION_SETTINGS, correction: 1, vibrato: 0, drift: 0 }).curve)).toBeLessThan(10);
   });
 
   it('reports no drift for vibrato around a steady pitch', () => {
-    expect(Math.abs(interpretNote(note, { correction: 1, vibrato: 1, drift: 1 }).driftCents)).toBeLessThan(15);
+    expect(Math.abs(interpretNote(note, { ...DEFAULT_EXPRESSION_SETTINGS, correction: 1, vibrato: 1, drift: 1 }).driftCents)).toBeLessThan(15);
   });
 
   it('always removes fast jitter', () => {
     // ±20 cents at 30 Hz: roughness, not vibrato.
     const [rough] = buildNotes(analysis([[60, 0.5, 1]], 0), DEFAULT_NOTE_SETTINGS);
     rough.curve.pitch = rough.curve.t.map((t) => 60 + 0.2 * Math.sin(2 * Math.PI * 30 * t));
-    expect(range(interpretNote(rough, { correction: 1, vibrato: 1, drift: 1 }).curve)).toBeLessThan(12);
+    expect(range(interpretNote(rough, { ...DEFAULT_EXPRESSION_SETTINGS, correction: 1, vibrato: 1, drift: 1 }).curve)).toBeLessThan(12);
   });
 
   it('keeps slow drift by its own amount', () => {
     const [sag] = buildNotes(analysis([[60, 0.5, 1]], 0), DEFAULT_NOTE_SETTINGS);
     sag.curve.pitch = sag.curve.t.map((t) => 60 - 0.4 * t); // sags 40 cents over the note
-    const interp = interpretNote(sag, { correction: 1, vibrato: 0, drift: 1 });
+    const interp = interpretNote(sag, { ...DEFAULT_EXPRESSION_SETTINGS, correction: 1, vibrato: 0, drift: 1 });
     expect(interp.driftCents).toBeLessThan(-15);
-    expect(range(interpretNote(sag, { correction: 1, vibrato: 0, drift: 0 }).curve)).toBeLessThan(1);
+    expect(range(interpretNote(sag, { ...DEFAULT_EXPRESSION_SETTINGS, correction: 1, vibrato: 0, drift: 0 }).curve)).toBeLessThan(1);
   });
 });

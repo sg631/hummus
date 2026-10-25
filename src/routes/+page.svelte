@@ -23,30 +23,54 @@
     type Transcription
   } from '$lib/transcription';
   import type { PitchFrame } from '$lib/music/types';
-  import { PPQ } from '$lib/music/time';
-  import { GRID_OPTIONS, quantizeNotes, removeOverlaps, type QuantizeSettings } from '$lib/music/quantize';
-  import { scheduleClip, type ScheduledClip } from '$lib/audio/playback';
+  import {
+    PPQ,
+    TIME_SIGNATURES,
+    beatTicks,
+    formatTimeSignature,
+    parseTimeSignature,
+    ticksToSeconds,
+    type TimeSignature
+  } from '$lib/music/time';
+  import {
+    AUTO_GRID,
+    GRID_OPTIONS,
+    analyzeRhythm,
+    quantizeNotes,
+    removeOverlaps,
+    type QuantizeSettings
+  } from '$lib/music/quantize';
+  import { scheduleClip, scheduleRecording, type ScheduledClip } from '$lib/audio/playback';
   import { Metronome } from '$lib/audio/metronome';
   import { initAudio } from '$lib/audio/engine';
   import LatencyCalibration from '$lib/components/latency/LatencyCalibration.svelte';
   import DeviceSelect from '$lib/components/devices/DeviceSelect.svelte';
   import { latency } from '$lib/state/latency.svelte';
   import { clipsToMidi } from '$lib/music/midi';
+  import { isCompound, rhythmBeat } from '$lib/music/rhythm';
   import { downloadBlob } from '$lib/download';
 
   const COUNT_IN_OPTIONS = [0, 1, 2]; // bars
-  const BEATS_OPTIONS = [2, 3, 4, 6];
 
   // Internal, never displayed, so not $state.
   let transcriber: LiveTranscriber | null = null;
   let synth: Tone.Synth | null = null;
   let scheduled: ScheduledClip | null = null;
+  let scheduledRecording: ScheduledClip | null = null;
   let metronome: Metronome | null = null;
 
   // Displayed. Big, replaced wholesale, never mutated: $state.raw skips deep proxying.
   let recording = $state(false);
-  let tempo = $state({ bpm: 100, beatsPerBar: 4, countInBars: 1, metronome: true });
+  let tempo = $state({
+    bpm: 100, // quarter notes per minute, whatever the time signature
+    timeSignature: [4, 4] as TimeSignature,
+    countInBars: 1,
+    metronome: true
+  });
+  const beatsPerBar = $derived(tempo.timeSignature[0]);
+  let playback = $state({ notes: true, recording: false });
   let takeBpm = $state(100); // the tempo the take was sung to; notes are placed by it
+  let takeTimeSignature = $state.raw<TimeSignature>([4, 4]); // ...and its time signature (quantizing, saving)
   let beat = $state<number | null>(null); // current beat while the transport runs
   let countInBeats = $state(0);
   const countingIn = $derived(recording && beat !== null && beat < countInBeats);
@@ -60,7 +84,7 @@
   }>({
     notes: { ...DEFAULT_NOTE_SETTINGS },
     expression: { ...DEFAULT_EXPRESSION_SETTINGS },
-    quantize: { grid: PPQ / 4, strength: 1, durations: true }
+    quantize: { grid: PPQ / 4, strength: 1, durations: true, swing: 'auto' }
   });
 
   // Everything below re-derives instantly when a setting changes; the take is never modified.
@@ -73,11 +97,25 @@
   const tuningCents = $derived(
     notes.length ? notes.reduce((sum, n) => sum + n.referenceCents, 0) / notes.length : 0
   );
-  const clip = $derived.by(() => {
-    if (!take) return null;
-    const c = toClip(notes, takeBpm, settings.expression, 'take');
-    return { ...c, notes: removeOverlaps(quantizeNotes(c.notes, settings.quantize)) };
-  });
+  const unquantized = $derived(take ? toClip(notes, takeBpm, settings.expression, 'take') : null);
+  const clip = $derived(
+    unquantized && {
+      ...unquantized,
+      notes: removeOverlaps(quantizeNotes(unquantized.notes, settings.quantize, takeTimeSignature, takeBpm))
+    }
+  );
+  // What the Auto grid heard: the swing, and beats that could be read another way.
+  const rhythm = $derived(
+    unquantized && settings.quantize.grid === AUTO_GRID
+      ? analyzeRhythm(unquantized.notes, settings.quantize, takeTimeSignature, takeBpm)
+      : null
+  );
+  // "bar 2, beat 3" for a tick position in the take's time signature.
+  function beatName(tick: number) {
+    const beat = Math.round(tick / rhythmBeat(takeTimeSignature));
+    const perBar = isCompound(takeTimeSignature) ? takeTimeSignature[0] / 3 : takeTimeSignature[0];
+    return `bar ${Math.floor(beat / perBar) + 1}, beat ${(beat % perBar) + 1}`;
+  }
 
   // The chart shows pYIN's pitch track (what the notes are built from) under the notes.
   const debugFrames = $derived.by((): PitchFrame[] => {
@@ -111,10 +149,10 @@
     transport.cancel(); // clear anything scheduled before
     transport.position = 0;
     transport.bpm.value = tempo.bpm;
-    transport.timeSignature = tempo.beatsPerBar;
+    transport.timeSignature = $state.snapshot(tempo.timeSignature);
 
     metronome ??= new Metronome();
-    metronome.beatsPerBar = tempo.beatsPerBar;
+    metronome.timeSignature = $state.snapshot(tempo.timeSignature);
     metronome.enabled = tempo.metronome;
     metronome.onBeat = (b) => (beat = b);
     metronome.schedule();
@@ -130,13 +168,14 @@
     live = null;
     take = null;
     takeBpm = tempo.bpm;
-    countInBeats = tempo.countInBars * tempo.beatsPerBar;
+    takeTimeSignature = $state.snapshot(tempo.timeSignature);
+    countInBeats = tempo.countInBars * beatsPerBar;
 
     // Transport time 0 starts the count-in; the take starts on the downbeat after it,
     // so the take's time 0 is bar 1, beat 1 and the quantize grid lines up with the clicks.
     const transport = prepareTransport();
     const startAt = Tone.now() + 0.1;
-    const downbeat = startAt + (countInBeats * 60) / tempo.bpm;
+    const downbeat = startAt + ticksToSeconds(countInBeats * beatTicks(tempo.timeSignature), tempo.bpm);
     transport.start(startAt);
 
     transcriber = new LiveTranscriber(liveInput, (t) => (live = t));
@@ -179,9 +218,16 @@
     if (!clip) return;
     await initAudio();
     scheduled?.dispose();
+    scheduledRecording?.dispose();
+    scheduled = scheduledRecording = null;
     const transport = prepareTransport();
-    synth ??= new Tone.Synth().toDestination();
-    scheduled = scheduleClip(clip, synth);
+    if (playback.notes) {
+      synth ??= new Tone.Synth().toDestination();
+      scheduled = scheduleClip(clip, synth);
+    }
+    if (playback.recording && take) {
+      scheduledRecording = scheduleRecording(take.audio, take.sampleRate, tempo.bpm / takeBpm);
+    }
     transport.start();
   }
 
@@ -194,13 +240,13 @@
   }
 
   function exportMidi() {
-    if (clip) downloadBlob(clipsToMidi([clip], tempo.bpm), 'melody.mid');
+    if (clip) downloadBlob(clipsToMidi([clip], tempo.bpm, $state.snapshot(tempo.timeSignature)), 'melody.mid');
   }
 
   // The take's audio as a file, to replay as a regression test (see takes.test.ts).
   function saveTake() {
     if (!take) return;
-    const file = encodeTake(take.audio, take.sampleRate, takeBpm);
+    const file = encodeTake(take.audio, take.sampleRate, takeBpm, takeTimeSignature);
     const blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
     downloadBlob(blob, `take-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
   }
@@ -211,6 +257,7 @@
     liveInput.stop();
     stopPlayback();
     scheduled?.dispose();
+    scheduledRecording?.dispose();
     synth?.dispose();
     metronome?.dispose();
   });
@@ -223,7 +270,13 @@
     <Button variant={recording ? 'destructive' : 'default'} onclick={toggleRecording}>
       {countingIn ? 'Cancel' : recording ? 'Stop' : 'Record'}
     </Button>
-    <Button variant="outline" onclick={play} disabled={!clip || recording}>Play</Button>
+    <Button
+      variant="outline"
+      onclick={play}
+      disabled={!clip || recording || (!playback.notes && !playback.recording)}
+    >
+      Play
+    </Button>
     <Button variant="outline" onclick={stopPlayback} disabled={!clip}>Stop playback</Button>
     <Button variant="outline" onclick={exportMidi} disabled={!clip || clip.notes.length === 0}>
       Export MIDI
@@ -231,10 +284,21 @@
     <Button variant="outline" onclick={saveTake} disabled={!take}>Save take</Button>
   </div>
 
+  <div class="flex flex-wrap justify-center gap-x-6 gap-y-2">
+    <div class="flex items-center gap-2">
+      <Switch id="play-notes" bind:checked={playback.notes} />
+      <Label for="play-notes">Play notes</Label>
+    </div>
+    <div class="flex items-center gap-2">
+      <Switch id="play-recording" bind:checked={playback.recording} />
+      <Label for="play-recording">Play recording</Label>
+    </div>
+  </div>
+
   <div class="flex h-8 items-center gap-2" aria-live="polite">
     {#if beat !== null}
-      {@const inBar = (beat % tempo.beatsPerBar) + 1}
-      {#each Array.from({ length: tempo.beatsPerBar }, (_, i) => i + 1) as b (b)}
+      {@const inBar = (beat % beatsPerBar) + 1}
+      {#each Array.from({ length: beatsPerBar }, (_, i) => i + 1) as b (b)}
         <span
           class="size-3 rounded-full transition-colors {b === inBar
             ? countingIn
@@ -247,7 +311,7 @@
         {#if countingIn}
           count-in {countInBeats - beat}
         {:else}
-          bar {Math.floor((beat - (recording ? countInBeats : 0)) / tempo.beatsPerBar) + 1}
+          bar {Math.floor((beat - (recording ? countInBeats : 0)) / beatsPerBar) + 1}
         {/if}
       </span>
     {/if}
@@ -257,25 +321,26 @@
     <h2 class="text-sm font-semibold">Tempo</h2>
 
     <div class="flex flex-col gap-2">
-      <Label>BPM: {tempo.bpm}</Label>
+      <Label>BPM: {tempo.bpm} <span class="text-muted-foreground font-normal">(quarter notes)</span></Label>
       <Slider type="single" bind:value={tempo.bpm} min={40} max={240} step={1} disabled={recording} />
     </div>
 
     <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
       <div class="flex items-center gap-2">
-        <Label>Beats per bar</Label>
+        <Label>Time signature</Label>
         <ToggleGroup.Root
           type="single"
           disabled={recording}
           bind:value={
-            () => String(tempo.beatsPerBar),
+            () => formatTimeSignature(tempo.timeSignature),
             (v) => {
-              if (v) tempo.beatsPerBar = Number(v);
+              const ts = parseTimeSignature(v);
+              if (ts) tempo.timeSignature = ts;
             }
           }
         >
-          {#each BEATS_OPTIONS as n (n)}
-            <ToggleGroup.Item value={String(n)}>{n}</ToggleGroup.Item>
+          {#each TIME_SIGNATURES.map(formatTimeSignature) as ts (ts)}
+            <ToggleGroup.Item value={ts}>{ts}</ToggleGroup.Item>
           {/each}
         </ToggleGroup.Root>
       </div>
@@ -314,7 +379,8 @@
     </div>
     {#if take && takeBpm !== tempo.bpm}
       <p class="text-muted-foreground text-xs">
-        Recorded at {takeBpm} BPM; playing at {tempo.bpm} changes the speed.
+        Recorded at {takeBpm} BPM; playing at {tempo.bpm} changes the speed (the recording
+        keeps its pitch).
       </p>
     {/if}
   </section>
@@ -336,7 +402,7 @@
 
     <div class="flex flex-col gap-2">
       <Label>Minimum note: {Math.round(settings.notes.minNoteSec * 1000)} ms</Label>
-      <Slider type="single" bind:value={settings.notes.minNoteSec} min={0.1} max={0.4} step={0.01} />
+      <Slider type="single" bind:value={settings.notes.minNoteSec} min={0.03} max={0.4} step={0.005} />
     </div>
 
     <div class="flex items-center gap-2">
@@ -371,8 +437,20 @@
     </div>
 
     <div class="flex flex-col gap-2">
-      <Label>Drift and scoops kept: {Math.round(settings.expression.drift * 100)}%</Label>
+      <Label>Drift inside notes kept: {Math.round(settings.expression.drift * 100)}%</Label>
       <Slider type="single" bind:value={settings.expression.drift} min={0} max={1} step={0.05} />
+    </div>
+    <div class="flex flex-col gap-2">
+      <Label>Scoops, slides and falls kept: {Math.round(settings.expression.gestures * 100)}%</Label>
+      <Slider type="single" bind:value={settings.expression.gestures} min={0} max={1} step={0.05} />
+    </div>
+    <div class="flex flex-col gap-2">
+      <Label>
+        Counts as a scoop or fall from {Math.round(settings.expression.gestureCents)}¢ and
+        {Math.round(settings.expression.gestureSec * 1000)} ms (shorter: just changing note)
+      </Label>
+      <Slider type="single" bind:value={settings.expression.gestureCents} min={50} max={400} step={10} />
+      <Slider type="single" bind:value={settings.expression.gestureSec} min={0.05} max={0.4} step={0.01} />
     </div>
     <p class="text-muted-foreground text-xs">
       The voice's natural fast roughness is always removed; a synth makes it sound broken.
@@ -403,6 +481,50 @@
       <Switch id="durations" bind:checked={settings.quantize.durations} />
       <Label for="durations">Quantize note lengths</Label>
     </div>
+
+    {#if settings.quantize.grid === AUTO_GRID}
+      <div class="flex items-center gap-2">
+        <Switch
+          id="swing-auto"
+          bind:checked={
+            () => settings.quantize.swing === 'auto',
+            (on) => (settings.quantize.swing = on ? 'auto' : (rhythm?.swing ?? 0.5))
+          }
+        />
+        <Label for="swing-auto">Measure swing from the take</Label>
+      </div>
+      {#if settings.quantize.swing !== 'auto'}
+        <div class="flex flex-col gap-2">
+          <Label>Swing: {Math.round((settings.quantize.swing ?? 0.5) * 100)}% (50 straight, 67 triplet swing)</Label>
+          <Slider
+            type="single"
+            bind:value={
+              () => (typeof settings.quantize.swing === 'number' ? settings.quantize.swing : 0.5),
+              (v) => (settings.quantize.swing = v)
+            }
+            min={0.5}
+            max={0.75}
+            step={0.01}
+          />
+        </div>
+      {/if}
+      {#if rhythm}
+        <p class="text-muted-foreground text-xs">
+          {#if rhythm.measuredSwing === null}
+            Swing: not enough off-beat eighths to measure{isCompound(takeTimeSignature) ? ' (compound time)' : ''}.
+          {:else}
+            Measured swing: {Math.round(rhythm.measuredSwing * 100)}%{rhythm.measuredSwing === 0.5 ? ' (straight)' : ''}.
+          {/if}
+          {#if Math.abs(ticksToSeconds(rhythm.offset, takeBpm)) >= 0.01}
+            You sat {Math.round(Math.abs(ticksToSeconds(rhythm.offset, takeBpm)) * 1000)} ms
+            {rhythm.offset > 0 ? 'behind' : 'ahead of'} the beat (allowed for).
+          {/if}
+          {#if rhythm.ambiguous.length}
+            Could be read another way: {rhythm.ambiguous.map((c) => beatName(c.start)).join('; ')}.
+          {/if}
+        </p>
+      {/if}
+    {/if}
   </section>
 
   <ol class="w-full space-y-1 font-mono text-sm">
@@ -422,6 +544,16 @@
         {#if Math.abs(off) >= 15}
           <span class="rounded bg-amber-500/15 px-1.5 text-amber-600">
             {off > 0 ? '+' : ''}{Math.round(off)}¢
+          </span>
+        {/if}
+        {#if interp.scoop}
+          <span class="rounded bg-violet-500/15 px-1.5 text-violet-600">
+            scoop {interp.scoop.cents > 0 ? '+' : ''}{interp.scoop.cents}¢
+          </span>
+        {/if}
+        {#if interp.fall}
+          <span class="rounded bg-violet-500/15 px-1.5 text-violet-600">
+            fall {interp.fall.cents > 0 ? '+' : ''}{interp.fall.cents}¢
           </span>
         {/if}
         {#if Math.abs(interp.driftCents) >= 30}

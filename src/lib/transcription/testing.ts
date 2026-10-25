@@ -81,3 +81,37 @@ export function withBurst(audio: Float32Array, at: number, seconds: number, leve
   }
   return out;
 }
+
+// Quiet, breathy singing in a room: weak overtones, aspiration noise at `breath` times the
+// voiced level (pulsing with the voice), and steady room noise `room` times a quiet room's.
+export function breathyVoice(
+  pitchAt: (t: number) => number | null,
+  seconds: number,
+  breath: number,
+  room = 1,
+  seed = 1
+): Float32Array {
+  const random = seeded(seed);
+  const out = new Float32Array(Math.round(seconds * RATE));
+  let phase = 0;
+  let jitter = 0;
+  let brown = 0;
+  let aspiration = 0;
+  for (let i = 0; i < out.length; i++) {
+    const midi = pitchAt(i / RATE);
+    jitter = jitter * 0.999 + (random() - 0.5) * 0.006;
+    brown = brown * 0.98 + (random() - 0.5) * 0.2;
+    const background = 0.0015 * room * brown;
+    if (midi === null) {
+      out[i] = background;
+      continue;
+    }
+    phase += (2 * Math.PI * 440 * 2 ** ((midi + jitter - 69) / 12)) / RATE;
+    let v = 0;
+    for (let h = 1; h <= 8; h++) v += Math.sin(h * phase) / (h * h);
+    aspiration = aspiration * 0.6 + (random() - 0.5) * 0.4;
+    const pulse = 0.6 + 0.4 * Math.max(0, Math.sin(phase));
+    out[i] = 0.01 * (v + breath * 3 * aspiration * pulse) + background;
+  }
+  return out;
+}
