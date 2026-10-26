@@ -7,26 +7,7 @@
 //   const id = await addUserSample(name, audio, sampleRate)
 //   const id = await addUserFile(file)           // decodes an uploaded audio file
 //   const buffer = await userSampleBuffer(id)
-import Dexie, { type Table } from 'dexie';
-
-interface StoredSample {
-  id: string;
-  name: string;
-  sampleRate: number;
-  audio: Float32Array; // mono
-  createdAt: number;
-}
-
-class SampleDb extends Dexie {
-  samples!: Table<StoredSample, string>;
-  constructor() {
-    super('hum-daw');
-    this.version(1).stores({ samples: 'id, name, createdAt' });
-  }
-}
-
-let db: SampleDb | null = null;
-const database = () => (db ??= new SampleDb());
+import { database } from './db';
 
 export interface UserSample {
   id: string; // 'u:…'

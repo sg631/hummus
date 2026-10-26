@@ -10,6 +10,9 @@ export class Metronome {
   // Called on every beat (even when muted), at the moment it's heard, for UI.
   // `beat` counts from 0 at transport position 0.
   onBeat: ((beat: number) => void) | null = null;
+  // Whether the beat at `tick` starts a bar, when bars change length over the song (a time
+  // signature lane); otherwise every `beatsPerBar` beats.
+  accentAt: ((tick: number) => boolean) | null = null;
 
   private synth = new Tone.Synth({
     oscillator: { type: 'triangle' },
@@ -24,8 +27,9 @@ export class Metronome {
     const ticksPerBeat = beatTicks(this.timeSignature);
     this.eventId = transport.scheduleRepeat(
       (time) => {
-        const beat = Math.round(transport.getTicksAtTime(time) / ticksPerBeat);
-        const accent = beat % beatsPerBar === 0;
+        const tick = transport.getTicksAtTime(time);
+        const beat = Math.round(tick / ticksPerBeat);
+        const accent = this.accentAt ? this.accentAt(tick) : beat % beatsPerBar === 0;
         if (this.enabled) {
           this.synth.triggerAttackRelease(accent ? 1760 : 1320, 0.03, time, accent ? 0.8 : 0.45);
         }

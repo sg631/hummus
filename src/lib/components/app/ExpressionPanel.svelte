@@ -57,7 +57,7 @@
     Expression{off ? ' (select notes)' : sampled ? ' (not heard on samples)' : ''}
   </span>
 
-  <Knob
+  <Knob automate={false}
     label="Sung"
     size={30}
     bind:value={() => (e.bend ?? 1) * 100, (v) => change('bend', (x) => (x.bend = v / 100))}
@@ -70,7 +70,7 @@
   />
 
   <div class="flex gap-2 rounded border px-2 pt-1">
-    <Knob
+    <Knob automate={false}
       label="Slide in"
       size={30}
       bind:value={() => e.slideIn?.semitones ?? 0, (v) => change('slideIn', (x) => (x.slideIn = v ? { semitones: v, sec: x.slideIn?.sec ?? DEFAULT_SLIDE_SEC } : undefined))}
@@ -81,7 +81,7 @@
       format={st}
       disabled={off}
     />
-    <Knob
+    <Knob automate={false}
       label="Time"
       size={30}
       bind:value={() => e.slideIn?.sec ?? DEFAULT_SLIDE_SEC, (v) => change('slideInSec', (x) => (x.slideIn = { semitones: x.slideIn?.semitones ?? 0, sec: v }))}
@@ -95,7 +95,7 @@
   </div>
 
   <div class="flex gap-2 rounded border px-2 pt-1">
-    <Knob
+    <Knob automate={false}
       label="Slide out"
       size={30}
       bind:value={() => e.slideOut?.semitones ?? 0, (v) => change('slideOut', (x) => (x.slideOut = v ? { semitones: v, sec: x.slideOut?.sec ?? DEFAULT_SLIDE_SEC } : undefined))}
@@ -106,7 +106,7 @@
       format={st}
       disabled={off}
     />
-    <Knob
+    <Knob automate={false}
       label="Time"
       size={30}
       bind:value={() => e.slideOut?.sec ?? DEFAULT_SLIDE_SEC, (v) => change('slideOutSec', (x) => (x.slideOut = { semitones: x.slideOut?.semitones ?? 0, sec: v }))}
@@ -119,7 +119,7 @@
     />
   </div>
 
-  <Knob
+  <Knob automate={false}
     label="Glide"
     size={30}
     bind:value={() => e.glide ?? 0, (v) => change('glide', (x) => (x.glide = v || undefined))}
@@ -132,7 +132,7 @@
     />
 
   <div class="flex gap-2 rounded border px-2 pt-1">
-    <Knob
+    <Knob automate={false}
       label="Vibrato"
       size={30}
       bind:value={() => e.vibrato?.cents ?? 0, (v) => change('vibrato', (x) => (x.vibrato = v ? { cents: v, hz: x.vibrato?.hz ?? 5.5 } : undefined))}
@@ -143,7 +143,7 @@
       format={(v) => (v === 0 ? 'off' : `${v}¢`)}
       disabled={off}
     />
-    <Knob
+    <Knob automate={false}
       label="Rate"
       size={30}
       bind:value={() => e.vibrato?.hz ?? 5.5, (v) => change('vibratoHz', (x) => (x.vibrato = { cents: x.vibrato?.cents ?? 0, hz: v }))}

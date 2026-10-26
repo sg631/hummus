@@ -22,13 +22,14 @@
   import { drumSample } from '$lib/music/drum-samples';
   import { userSampleName } from '$lib/state/user-samples.svelte';
   import { contextMenu } from '$lib/state/context-menu.svelte';
+  import { automatable, shown } from '$lib/state/automation.svelte';
   import { drumName, STEP_TICKS, stepsPerBar, stepsPerBeat, type DrumSound, type SwingUnit } from '$lib/music/drums';
   import { placementAt, placementLength } from '$lib/music/arrange';
   import { measuredSwing } from '$lib/music/quantize';
   import { barTicks } from '$lib/music/time';
   import type { DrumRow, DrumTrack } from '$lib/music/types';
   import { playhead } from '$lib/state/playhead.svelte';
-  import { addDrumRow, cloneContent, deleteContent, newContent, project, removeDrumRow } from '$lib/state/project.svelte';
+  import { addDrumRow, automationFor, cloneContent, deleteContent, newContent, project, removeDrumRow } from '$lib/state/project.svelte';
 
   let { track }: { track: DrumTrack } = $props();
 
@@ -157,7 +158,7 @@
 
   <!-- Swing for the whole track. -->
   <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-    <Knob label="Swing" size={44} bind:value={track.swing} min={0.5} max={0.75} step={0.01} defaultValue={0.5} format={pct} />
+    <Knob label="Swing" size={44} bind:value={() => shown(automationFor(track.id, 'swing'), track.swing), (v) => (track.swing = v)} min={0.5} max={0.75} step={0.01} defaultValue={0.5} format={pct} automate={{ kind: 'mix', ownerId: track.id, param: 'swing' }} />
     <div class="flex items-center gap-2">
       <span>on</span>
       <ToggleGroup.Root
@@ -178,6 +179,8 @@
   <div class="overflow-x-auto pb-2">
     {#each track.rows as row (row.id)}
       {@const s = pattern.steps[row.id] ?? []}
+      {@const volumeLane = automationFor(row.id, 'volume')}
+      {@const panLane = automationFor(row.id, 'pan')}
       <!-- Each row is an instrument: sound, volume, pan, swing, mute, effects (FX), its steps. -->
       <div
         class="mb-1 flex w-max items-center gap-1"
@@ -199,16 +202,41 @@
         <Button size="sm" variant="outline" class="h-7 w-32 justify-between px-2 text-xs" title="Change this row's sound" onclick={() => browse(row.id)}>
           <span class="truncate">{soundName(row.sound)}</span><span class="text-muted-foreground">▾</span>
         </Button>
-        <div title="Volume"><Knob size={24} bind:value={row.volume} min={-30} max={6} step={1} defaultValue={0} format={(v) => `${v > 0 ? '+' : ''}${v}dB`} /></div>
-        <div title="Pan"><Knob size={24} bind:value={row.pan} min={-1} max={1} step={0.05} defaultValue={0} format={(v) => (Math.abs(v) < 0.025 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`)} /></div>
+        <div title="Volume">
+          <Knob
+            size={24}
+            bind:value={() => shown(volumeLane, row.volume), (v) => (row.volume = v)}
+            min={-30}
+            max={6}
+            step={1}
+            defaultValue={0}
+            format={(v) => `${v > 0 ? '+' : ''}${Math.round(v)}dB`}
+            color={volumeLane?.enabled ? 'rgb(245 158 11)' : undefined}
+            automate={{ kind: 'mix', ownerId: row.id, param: 'volume' }}
+          />
+        </div>
+        <div title="Pan">
+          <Knob
+            size={24}
+            bind:value={() => shown(panLane, row.pan), (v) => (row.pan = v)}
+            min={-1}
+            max={1}
+            step={0.05}
+            defaultValue={0}
+            format={(v) => (Math.abs(v) < 0.025 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`)}
+            color={panLane?.enabled ? 'rgb(245 158 11)' : undefined}
+            automate={{ kind: 'mix', ownerId: row.id, param: 'pan' }}
+          />
+        </div>
         <div title="Swing for this sound (right-click the row: follow the track's)" class={row.swing === undefined ? 'opacity-50' : ''}>
-          <Knob size={24} bind:value={() => row.swing ?? track.swing, (v) => (row.swing = v)} min={0.5} max={0.75} step={0.01} format={(v) => (row.swing === undefined ? 'trk' : pct(v))} />
+          <Knob size={24} bind:value={() => shown(automationFor(row.id, 'swing'), row.swing ?? track.swing), (v) => (row.swing = v)} min={0.5} max={0.75} step={0.01} format={(v) => (row.swing === undefined ? 'trk' : pct(v))} automate={{ kind: 'mix', ownerId: row.id, param: 'swing' }} />
         </div>
         <button
           class="h-6 w-6 rounded text-xs font-bold {row.mute ? 'bg-amber-500 text-white' : 'text-muted-foreground border'}"
           onclick={() => (row.mute = !row.mute)}
           aria-pressed={row.mute}
-          title="Mute this sound">M</button
+          title="Mute this sound (Ctrl+drag onto an automation lane to automate)"
+          use:automatable={{ kind: 'mix', ownerId: row.id, param: 'mute' }}>M</button
         >
         <button
           class="mr-1 h-6 rounded px-1.5 text-xs {row.effects.length ? 'bg-primary text-primary-foreground' : 'text-muted-foreground border'}"

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { cn } from '$lib/utils.js';
 	import { contextMenu, type MenuItem } from '$lib/state/context-menu.svelte';
+	import { automationMenu, startKnobDrag, touchAutomation } from '$lib/state/automation.svelte';
+	import type { AutomationTarget } from '$lib/music/types';
 
 	let {
 		value = $bindable(0),
@@ -13,6 +15,8 @@
 		color = 'var(--primary)',
 		disabled = false,
 		format,
+		menu,
+		automate,
 		class: className
 	}: {
 		value: number;
@@ -26,6 +30,14 @@
 		disabled?: boolean;
 		/** hum-daw addition: how the value is shown under the knob (default: rounded to `step`). */
 		format?: (value: number) => string;
+		/** hum-daw addition: more items for its right-click menu (e.g. "Automate…"). */
+		menu?: () => MenuItem[];
+		/**
+		 * hum-daw addition, required: the song setting it controls, so Ctrl+drag (or right-click)
+		 * automates it; or `false` for a knob that isn't a song setting (a selected note's
+		 * velocity, a tool's sensitivity…). Every knob has to say which it is.
+		 */
+		automate: AutomationTarget | false;
 		class?: string;
 	} = $props();
 
@@ -50,6 +62,7 @@
 		const sensitivity = 0.5;
 		const newValue = Math.min(max, Math.max(min, startValue + (diff / size) * range * sensitivity));
 		value = Math.round(newValue / step) * step;
+		touched();
 	}
 
 	function handleMouseUp() {
@@ -58,7 +71,15 @@
 		window.removeEventListener('mouseup', handleMouseUp);
 	}
 
+	// hum-daw addition: a change by hand (not by automation) can be recorded into its lane.
+	function touched() {
+		if (automate) touchAutomation(automate);
+	}
+
 	function onMouseDown(e: MouseEvent) {
+		// Ctrl+drag: drag this setting onto an automation lane instead of turning it (also
+		// when it can't be turned here, e.g. a built-in preset's setting).
+		if ((e.ctrlKey || e.metaKey) && automate) return startKnobDrag(e, automate, e.currentTarget as Element);
 		if (disabled) return;
 		isDragging = true;
 		startY = e.clientY;
@@ -79,13 +100,17 @@
 		else return;
 		e.preventDefault();
 		value = Math.round(Math.min(max, Math.max(min, next)) / step) * step;
+		touched();
 	}
 
 	// hum-daw addition: right-click menu (reset, min, max, type a value). Attached with the
 	// contextMenu action (a native listener), so it wins over menus of what it sits in.
 	function knobMenu(): MenuItem[] {
-		if (disabled) return [];
-		const set = (v: number) => (value = Math.round(Math.min(max, Math.max(min, v)) / step) * step);
+		if (disabled) return automate ? automationMenu(automate) : [];
+		const set = (v: number) => {
+			value = Math.round(Math.min(max, Math.max(min, v)) / step) * step;
+			touched();
+		};
 		return [
 			{ label: 'Reset to default', disabled: defaultValue === undefined, action: () => set(defaultValue ?? min) },
 			{ label: 'Set to minimum', action: () => set(min) },
@@ -97,13 +122,16 @@
 					const typed = window.prompt(`${label ?? 'Value'} (${min} to ${max})`, String(value));
 					if (typed !== null && typed.trim() !== '' && !Number.isNaN(Number(typed))) set(Number(typed));
 				}
-			}
+			},
+			...(menu ? [{ separator: true }, ...menu()] : []),
+			...(automate ? [{ separator: true }, ...automationMenu(automate)] : [])
 		];
 	}
 
 	function onDoubleClick() {
 		if (disabled) return;
 		value = defaultValue ?? min;
+		touched();
 	}
 
 	function onTouchStart(e: TouchEvent) {
@@ -120,6 +148,7 @@
 		const sensitivity = 0.5;
 		const newValue = Math.min(max, Math.max(min, startValue + (diff / size) * range * sensitivity));
 		value = Math.round(newValue / step) * step;
+		touched();
 	}
 </script>
 

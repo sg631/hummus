@@ -29,5 +29,5 @@ describe.skipIf(takes.length === 0)('real takes', () => {
       n.alternatives.map(name).includes(expected[i]) ? expected[i] : name(n.pitch)
     );
     expect(heard).toEqual(expected);
-  });
+  }, 60_000); // a real recording through the whole transcription: slow when every test runs at once
 });

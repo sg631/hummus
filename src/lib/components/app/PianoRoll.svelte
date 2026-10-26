@@ -14,7 +14,9 @@
   - the ruler at the top (bar numbers): click or drag to move the playhead, where Play
     starts and Paste goes
   - keyboard on the left: hear a pitch
-  - velocity lane at the bottom: drag over the bars to set how hard notes play
+  - the lane at the bottom: Velocity (drag over the bars to set how hard notes play), or the
+    clip's controller lanes: Bend (pitch bend, ±12 semitones over every note playing) and
+    Mod (the mod wheel: a vibrato that deepens). Drag to draw them; right-click to clear
   - Ctrl + mouse wheel: zoom; hold the middle button (wheel) and drag: pan
   Keys: listed in SHORTCUTS below (and the "Keys" button).
 
@@ -22,6 +24,8 @@
   Editing a recorded clip by hand ends live re-quantizing for it (its `source` is dropped).
 -->
 <script module lang="ts">
+  import { keysFor } from '$lib/state/layout.svelte';
+  import { liveKeys } from '$lib/state/live-keys.svelte';
   import type { Copied } from '$lib/music/note-edit';
   // Copied notes, kept while switching tracks.
   let clipboard: Copied = [];
@@ -60,6 +64,7 @@
   import { playhead, seek } from '$lib/state/playhead.svelte';
   import { openMenu, type MenuItem } from '$lib/state/context-menu.svelte';
   import { recorder } from '$lib/state/recorder.svelte';
+  import { view } from '$lib/state/view.svelte';
   import { recordingSettings } from '$lib/state/settings.svelte';
   import { takeFor } from '$lib/state/takes.svelte';
   import { addVoiceClip, addVoiceTrack, cloneContent, deleteContent, newContent, recordIntoClip } from '$lib/state/project.svelte';
@@ -191,7 +196,7 @@
   let scroller: HTMLDivElement;
   let roll: SVGSVGElement;
   let ruler: SVGSVGElement;
-  let lane: SVGSVGElement;
+  let lane = $state<SVGSVGElement>(null!); // the bottom lane (velocity, or a controller lane)
 
   // ---------- Small helpers ----------
 
@@ -529,6 +534,63 @@
     edited(d.kind === 'velocity' ? clipList : new Set(d.orig.map((o) => o.p.clip)));
   }
 
+  // ---------- Controller lanes: pitch bend, mod wheel ----------
+  let laneMode = $state<'velocity' | 'bend' | 'mod'>('velocity');
+  const CTL_STEP = 30; // ticks between drawn points
+  const ctlRange = (mode: 'bend' | 'mod') => (mode === 'bend' ? { min: -12, max: 12 } : { min: 0, max: 1 });
+  const ctlY = (mode: 'bend' | 'mod', v: number) => {
+    const r = ctlRange(mode);
+    return 2 + (1 - (v - r.min) / (r.max - r.min)) * (VEL_H - 4);
+  };
+  const ctlLine = $derived.by(() => {
+    if (laneMode === 'velocity') return '';
+    const pts = clip?.controllers?.[laneMode] ?? [];
+    if (!pts.length) return '';
+    const mode = laneMode;
+    return [`0,${ctlY(mode, pts[0].value)}`, ...pts.map((p) => `${x(p.tick)},${ctlY(mode, p.value)}`), `${width},${ctlY(mode, pts[pts.length - 1].value)}`].join(' ');
+  });
+
+  // Drawing a controller lane: each move writes the value under the pointer, replacing the
+  // points it passes over.
+  function onControllerDown(e: PointerEvent, mode: 'bend' | 'mod') {
+    if (e.button !== 0 || !clip) return;
+    checkpoint(track, mode === 'bend' ? 'Pitch bend' : 'Mod wheel');
+    const target = clip;
+    const r = ctlRange(mode);
+    let last: number | null = null;
+    const write = (ev: PointerEvent) => {
+      const { px, py } = point(ev, lane);
+      const tick = Math.max(0, Math.round(ticksAt(px) / CTL_STEP) * CTL_STEP);
+      const raw = r.max - ((py - 2) / (VEL_H - 4)) * (r.max - r.min);
+      const value = Math.round(Math.max(r.min, Math.min(r.max, raw)) * (mode === 'bend' ? 10 : 100)) / (mode === 'bend' ? 10 : 100);
+      target.controllers ??= {};
+      const pts = target.controllers[mode] ?? [];
+      // Replace what lies between the last point written (kept) and this one.
+      const lo = Math.min(last ?? tick, tick);
+      const hi = Math.max(last ?? tick, tick);
+      const between = (t: number) => t === tick || (t > lo && t < hi);
+      target.controllers[mode] = [...pts.filter((p) => !between(p.tick)), { tick, value }].sort((a, b) => a.tick - b.tick);
+      last = tick;
+    };
+    write(e);
+    window.addEventListener('pointermove', write);
+    window.addEventListener('pointerup', () => window.removeEventListener('pointermove', write), { once: true });
+  }
+
+  function controllerMenu(e: MouseEvent, mode: 'bend' | 'mod') {
+    openMenu(e, [
+      {
+        label: mode === 'bend' ? 'Clear the pitch bend' : 'Clear the mod wheel',
+        disabled: !clip?.controllers?.[mode]?.length,
+        action: () => {
+          if (!clip?.controllers) return;
+          checkpoint(track, 'Clear controller');
+          clip.controllers[mode] = [];
+        }
+      }
+    ]);
+  }
+
   // ---------- Velocity lane ----------
 
   function onLaneDown(e: PointerEvent) {
@@ -637,12 +699,12 @@
     const target = e.target as HTMLElement;
     // Not while typing, turning a knob (arrow keys), on a wheel, or in a window.
     if (target.closest('input, textarea, select, [contenteditable], [role="dialog"], [role="slider"], [role="listbox"]')) return;
+    if (!keysFor('editor')) return; // another panel on screen was clicked last
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     let handled = true;
-    if (mod && key === 'z' && !e.shiftKey) undo();
-    else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) redo();
-    else if (mod && key === 'a') select(placed.map((p) => p.note.id));
+    // Ctrl+Z / Ctrl+Y: the app-wide undo (Menubar.svelte), for everything, not just notes.
+    if (mod && key === 'a') select(placed.map((p) => p.note.id));
     else if (mod && key === 'c') copySelected();
     else if (mod && key === 'x') {
       copySelected();
@@ -728,7 +790,7 @@
 <div class="flex h-full flex-col">
   <!-- ---------- Toolbar ---------- -->
   <!-- One row that never changes height, so the notes below never jump. -->
-  <div class="flex h-11 shrink-0 items-center gap-x-4 overflow-x-auto border-b px-3 text-xs whitespace-nowrap">
+  <div class="flex h-11 shrink-0 items-center gap-x-4 overflow-x-auto border-b px-3 text-xs whitespace-nowrap" data-guide="roll.toolbar">
     <!-- The clip being edited: pick, new, copy (make unique), rename, delete. -->
     <span class="flex items-center gap-1">
       <span class="font-semibold">Clip</span>
@@ -753,6 +815,15 @@
       >
       <Button size="sm" variant="outline" class="h-7 px-2" disabled={track.clips.length <= 1} onclick={() => clip && deleteContent(track, clip.id)} title="Delete this clip (and its places in the Playlist)">✕</Button>
     </span>
+
+    <button
+      class="rounded-md border px-2 py-1"
+      data-guide="roll.sheet"
+      onclick={() => (view.sheet = true)}
+      title="Show these notes as sheet music"
+    >
+      Sheet
+    </button>
 
     <button
       class="rounded-md border px-2 py-1 {showPitch ? 'bg-primary text-primary-foreground' : ''}"
@@ -798,7 +869,7 @@
         {/if}
       </span>
       {#if chosen.length}
-        <Knob size={22} bind:value={() => chosenVelocity, setChosenVelocity} min={0.05} max={1} step={0.01} format={(v) => `vel ${Math.round(v * 100)}`} />
+        <Knob size={22} bind:value={() => chosenVelocity, setChosenVelocity} min={0.05} max={1} step={0.01} format={(v) => `vel ${Math.round(v * 100)}`} automate={false} />
       {/if}
     </div>
 
@@ -825,8 +896,8 @@
     </div>
   </div>
 
-  <ExpressionPanel {track} placed={chosen} />
-  <QuantizePanel {track} />
+  <div data-guide="roll.expression"><ExpressionPanel {track} placed={chosen} /></div>
+  <div data-guide="roll.quantize"><QuantizePanel {track} /></div>
 
   <!-- ---------- Keyboard, notes and velocity, in one scrolling area ---------- -->
   <!-- Middle button: pan (and no browser autoscroll: its mousedown is cancelled). -->
@@ -869,7 +940,7 @@
             y={y(p)}
             width={BLACK.includes(p % 12) ? KEYS_W * 0.65 : KEYS_W}
             height={ROW}
-            class="{BLACK.includes(p % 12) ? 'fill-foreground' : 'fill-background stroke-border'} cursor-pointer hover:opacity-70"
+            class="{liveKeys.sounding.includes(p) ? 'fill-sky-500' : BLACK.includes(p % 12) ? 'fill-foreground' : 'fill-background stroke-border'} cursor-pointer hover:opacity-70"
             role="button"
             tabindex="-1"
             aria-label="Play {name(p)}"
@@ -985,22 +1056,58 @@
     </div>
 
     <!-- Velocity lane: sticks to the bottom. Drag over the bars to set how hard notes play. -->
-    <div class="bg-background sticky bottom-0 z-10 flex border-t" style="width: {KEYS_W + width}px">
-      <div class="bg-background text-muted-foreground sticky left-0 z-10 flex shrink-0 items-center justify-center border-r text-[9px]" style="width: {KEYS_W}px">
-        Velocity
-      </div>
-      <svg bind:this={lane} {width} height={VEL_H} class="block shrink-0 cursor-ns-resize touch-none select-none" role="application" aria-label="Velocity" onpointerdown={onLaneDown}>
-        {#each placed as p (p.note.id)}
-          {@const h = p.note.velocity * (VEL_H - 4)}
-          <rect
-            x={x(absStart(p))}
-            y={VEL_H - h}
-            width={Math.max(3, Math.min(8, x(p.note.duration)))}
-            height={h}
-            class={selected.has(p.note.id) ? 'fill-amber-500' : 'fill-sky-600'}
-          />
+    <div class="bg-background sticky bottom-0 z-10 flex border-t" style="width: {KEYS_W + width}px" data-guide="roll.lanes">
+      <!-- Which lane: velocity, or a controller lane (pitch bend, mod wheel). -->
+      <div class="bg-background sticky left-0 z-10 flex shrink-0 flex-col justify-center gap-0.5 border-r px-0.5 text-[9px]" style="width: {KEYS_W}px" role="tablist">
+        {#each [['velocity', 'Velocity'], ['bend', 'Bend'], ['mod', 'Mod']] as [mode, name] (mode)}
+          <button
+            role="tab"
+            aria-selected={laneMode === mode}
+            class="rounded px-0.5 {laneMode === mode ? 'bg-muted text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground'}"
+            onclick={() => (laneMode = mode as typeof laneMode)}
+            title={mode === 'velocity' ? 'How hard each note plays' : mode === 'bend' ? 'Pitch bend: ±12 semitones over every note playing' : 'Mod wheel: a vibrato that deepens'}>{name}</button
+          >
         {/each}
-      </svg>
+      </div>
+      {#if laneMode === 'velocity'}
+        <svg bind:this={lane} {width} height={VEL_H} class="block shrink-0 cursor-ns-resize touch-none select-none" role="application" aria-label="Velocity" onpointerdown={onLaneDown}>
+          {#each placed as p (p.note.id)}
+            {@const h = p.note.velocity * (VEL_H - 4)}
+            <rect
+              x={x(absStart(p))}
+              y={VEL_H - h}
+              width={Math.max(3, Math.min(8, x(p.note.duration)))}
+              height={h}
+              class={selected.has(p.note.id) ? 'fill-amber-500' : 'fill-sky-600'}
+            />
+          {/each}
+        </svg>
+      {:else}
+        {@const mode = laneMode}
+        <svg
+          bind:this={lane}
+          {width}
+          height={VEL_H}
+          class="block shrink-0 cursor-crosshair touch-none select-none"
+          role="application"
+          aria-label={mode === 'bend' ? 'Pitch bend' : 'Mod wheel'}
+          onpointerdown={(e) => onControllerDown(e, mode)}
+          oncontextmenu={(e) => controllerMenu(e, mode)}
+        >
+          <!-- The notes, faint, to draw against; the zero line for bends. -->
+          {#each placed as p (p.note.id)}
+            <rect x={x(absStart(p))} y="0" width={Math.max(2, x(p.note.duration))} height={VEL_H} class="fill-sky-600/10" />
+          {/each}
+          {#if mode === 'bend'}
+            <line x1="0" x2={width} y1={ctlY('bend', 0)} y2={ctlY('bend', 0)} class="stroke-foreground/25" stroke-dasharray="3 3" />
+          {/if}
+          {#if ctlLine}
+            <polyline points={ctlLine} class="fill-none stroke-violet-500" stroke-width="2" />
+          {:else}
+            <text x="8" y={VEL_H / 2 + 3} class="fill-muted-foreground text-[10px]">Drag to draw the {mode === 'bend' ? 'pitch bend' : 'mod wheel'}</text>
+          {/if}
+        </svg>
+      {/if}
     </div>
   </div>
 </div>

@@ -7,7 +7,8 @@
 // ("Make unique" copies a clip when one place should differ.)
 //
 // A placement longer than its clip loops it; shorter cuts it off.
-import { barTicks } from './time';
+import { shiftAutomation } from './automation';
+import { barTicks, secondsToTicks } from './time';
 import type { DrumTrack, MidiTrack, Note, NoteClip, Placement, Project, Track, VoiceTrack } from './types';
 
 // How long a clip's content lasts: whole bars, at least one.
@@ -25,21 +26,39 @@ export function placementLength(p: Placement, content: number): number {
 export function expandPlacements(clips: NoteClip[], placements: Placement[], bar: number): NoteClip[] {
   const out: NoteClip[] = [];
   for (const p of placements) {
+    if (p.muted) continue;
     const clip = clips.find((c) => c.id === p.clipId);
     if (!clip) continue;
     const content = contentLength(clip.duration, bar);
     const length = placementLength(p, content);
-    for (let loop = 0, k = 0; loop < length; loop += content, k++) {
+    // A block can begin part-way into its clip (`offset`): the first repeat starts early.
+    for (let loop = -blockOffset(p, content), k = 0; loop < length; loop += content, k++) {
       const notes: Note[] = [];
       for (const n of clip.notes) {
         const start = loop + n.start;
         if (start < 0 || start >= length) continue;
         notes.push({ ...n, duration: Math.min(n.duration, length - start) });
       }
-      out.push({ id: `${p.id}#${k}`, start: p.start + loop, duration: Math.min(content, length - loop), notes });
+      if (notes.length) out.push({ id: `${p.id}#${k}`, start: p.start + loop, duration: Math.min(content, length - loop), notes, controllers: clip.controllers });
     }
   }
   return out;
+}
+
+// Where in its clip a block begins (0 … content), from its offset.
+export function blockOffset(p: Placement, content: number): number {
+  const o = p.offset ?? 0;
+  return content > 0 ? ((o % content) + content) % content : 0;
+}
+
+// Splits a block at `tick` (inside it): it ends there, and a new block (returned, not yet
+// added) carries on from the same point of the clip.
+export function splitPlacement(p: Placement, tick: number, content: number): Placement | undefined {
+  const length = placementLength(p, content);
+  const at = tick - p.start;
+  if (at <= 0 || at >= length) return;
+  p.length = at;
+  return { id: crypto.randomUUID(), clipId: p.clipId, start: tick, length: length - at, offset: (p.offset ?? 0) + at, muted: p.muted };
 }
 
 // The placement playing at `tick`, if any (the latest-starting one, if they overlap).
@@ -61,7 +80,7 @@ export function arrangementEnd(placements: Placement[], lengthOf: (p: Placement)
 // but the small track objects) for the mixer to play from tick 0.
 
 // Pattern mode: just one track's current clip (melody) or pattern (drums), from 0, once —
-// played on a loop of `length` ticks. A voice track: its recordings within `loopBars` bars
+// played on a loop of `length` ticks. No automation (it follows the song, not the loop). A voice track: its recordings within `loopBars` bars
 // from the bar the playhead is in. Empty clips loop `loopBars` bars (room to record into).
 export function patternProject(
   project: Project,
@@ -77,19 +96,19 @@ export function patternProject(
     if (!clip) return null;
     const length = clip.notes.length ? contentLength(clip.duration, bar) : loopBars * bar;
     const t: MidiTrack = { ...track, placements: [{ id: 'pattern', clipId: clip.id, start: 0, length }] };
-    return { project: { ...project, tracks: [t] }, length, origin: 0 };
+    return { project: { ...project, tracks: [t], automation: [] }, length, origin: 0 };
   }
   if (track.kind === 'drums') {
     const pattern = track.patterns.find((p) => p.id === track.current) ?? track.patterns[0];
     if (!pattern) return null;
     const length = pattern.bars * bar;
     const t: DrumTrack = { ...track, placements: [{ id: 'pattern', clipId: pattern.id, start: 0, length }] };
-    return { project: { ...project, tracks: [t] }, length, origin: 0 };
+    return { project: { ...project, tracks: [t], automation: [] }, length, origin: 0 };
   }
   const origin = Math.floor(cursor / bar) * bar;
   const length = loopBars * bar;
   const t: VoiceTrack = { ...track, clips: track.clips.filter((c) => c.start >= origin && c.start < origin + length).map((c) => ({ ...c, start: c.start - origin })) };
-  return { project: { ...project, tracks: [t] }, length, origin };
+  return { project: { ...project, tracks: [t], automation: [] }, length, origin };
 }
 
 // The song from `from` ticks on, as if it began there: for recording from the playhead
@@ -116,5 +135,31 @@ export function shiftProject(project: Project, from: number): Project {
     }
     return { ...track, clips: track.clips.map((c) => ({ ...c, start: c.start - from })) };
   });
-  return { ...project, tracks };
+  return { ...project, tracks, automation: shiftAutomation(project.automation, from) };
+}
+
+// How long the song is (ticks): where the last block, pattern or recording ends. Drum
+// tracks with nothing placed loop all song, so they only count if nothing else does (then:
+// their pattern, once).
+export function songLength(project: Project): number {
+  const bar = barTicks(project.timeSignature);
+  let end = 0;
+  let loopingDrums = 0;
+  for (const t of project.tracks) {
+    if (t.kind === 'midi') {
+      const len = (p: Placement) => placementLength(p, contentLength(t.clips.find((c) => c.id === p.clipId)?.duration ?? 0, bar));
+      end = Math.max(end, arrangementEnd(t.placements, len));
+    } else if (t.kind === 'drums') {
+      const bars = (p: Placement) => placementLength(p, (t.patterns.find((k) => k.id === p.clipId)?.bars ?? 1) * bar);
+      if (t.placements.length) end = Math.max(end, arrangementEnd(t.placements, bars));
+      else loopingDrums = Math.max(loopingDrums, (t.patterns.find((k) => k.id === t.current) ?? t.patterns[0])?.bars ?? 1);
+    } else {
+      for (const c of t.clips) {
+        const e = c.edit ?? {};
+        const sec = ((e.trimEnd ?? c.audio.length / c.sampleRate) - (e.trimStart ?? 0)) / (e.speed ?? 1);
+        end = Math.max(end, c.start + secondsToTicks(sec, c.recordedBpm));
+      }
+    }
+  }
+  return end || loopingDrums * bar;
 }

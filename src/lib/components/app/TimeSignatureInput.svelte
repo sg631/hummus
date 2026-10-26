@@ -4,10 +4,15 @@
   Type a number, or use the arrow keys / scroll. The bottom number has to be 2, 4, 8 or 16:
   the arrow keys step between those, and anything else typed snaps to the nearest.
   Changes apply when you press Enter or leave the field.
+  Ctrl+drag it onto an automation lane (or right-click) to change the beats per bar over
+  the song (drums and the metronome follow).
 -->
 <script lang="ts">
   import { Input } from '$lib/components/ui/input/index.js';
   import { project } from '$lib/state/project.svelte';
+  import { automationMenu, startKnobDrag } from '$lib/state/automation.svelte';
+  import { contextMenu } from '$lib/state/context-menu.svelte';
+  import { BEATS } from '$lib/music/automation';
 
   let { disabled = false }: { disabled?: boolean } = $props();
 
@@ -62,7 +67,14 @@
 </script>
 
 <!-- Stacked like on sheet music: beats on top, the beat note below, a line between. -->
-<div class="flex h-10 w-11 flex-col items-stretch justify-center rounded-md border" title="Time signature: beats per bar over the note that gets the beat (arrow keys or type)">
+<div
+  class="flex h-10 w-11 flex-col items-stretch justify-center rounded-md border"
+  title="Time signature: beats per bar over the note that gets the beat (arrow keys or type). Ctrl+drag onto an automation lane to change it over the song"
+  role="group"
+  aria-label="Time signature"
+  onpointerdowncapture={(e) => (e.ctrlKey || e.metaKey) && e.button === 0 && startKnobDrag(e, BEATS, e.currentTarget)}
+  use:contextMenu={() => automationMenu(BEATS)}
+>
   <Input
     type="number"
     min={1}

@@ -67,12 +67,13 @@ class Crusher extends Tone.ToneAudioNode {
   readonly output = new Tone.CrossFade({ context: this.context, fade: 1 });
   private node: AudioWorkletNode | null = null;
   private values: Record<string, number> = { bits: 6, downsample: 8 };
+  readonly ready: Promise<void>; // the worklet is running (exporting audio waits for it)
 
   constructor() {
     super();
     this.input.connect(this.output.a); // dry
     this.input.connect(this.output.b); // crushed, once the worklet is ready
-    loadCrusher(this.context).then(
+    this.ready = loadCrusher(this.context).then(
       () => {
         if (this.disposed) return;
         const node = this.context.createAudioWorkletNode('hum-crusher', { outputChannelCount: [2] });
@@ -103,6 +104,140 @@ class Crusher extends Tone.ToneAudioNode {
     this.input.dispose();
     this.output.dispose();
     this.node?.disconnect();
+    return this;
+  }
+}
+
+// ---------- Stereo chorus ----------
+// Each side has its own delay, wobbled by its own LFO: the right's delay is offset from the
+// left's (`offset`, ms) and its LFO runs `spread` degrees behind, so the two sides drift
+// apart and the sound spreads across the speakers. A mono sound comes in on both sides.
+class StereoChorus extends Tone.ToneAudioNode {
+  readonly name = 'StereoChorus';
+  readonly input = new Tone.Gain({ context: this.context });
+  readonly output = new Tone.CrossFade({ context: this.context, fade: 0.5 });
+  private split = new Tone.Split({ context: this.context, channels: 2 });
+  private merge = new Tone.Merge({ context: this.context, channels: 2 });
+  private sides = [0, 1].map(() => ({
+    delay: new Tone.Delay({ context: this.context, delayTime: 0.004, maxDelay: 0.05 }),
+    lfo: new Tone.LFO({ context: this.context, frequency: 1.5, min: 0.002, max: 0.006 }),
+    feedback: new Tone.Gain({ context: this.context, gain: 0 })
+  }));
+  private values = { frequency: 1.5, depth: 0.7, delayTime: 3.5, offset: 1.5, spread: 90, feedback: 0 };
+
+  constructor() {
+    super();
+    // Mono in → both sides (the input is mixed up to stereo).
+    this.input.channelCount = 2;
+    this.input.channelCountMode = 'explicit';
+    this.input.channelInterpretation = 'speakers';
+    this.input.connect(this.output.a); // dry
+    this.input.connect(this.split);
+    this.sides.forEach((s, i) => {
+      this.split.connect(s.delay, i, 0);
+      s.delay.connect(s.feedback);
+      s.feedback.connect(s.delay);
+      s.lfo.connect(s.delay.delayTime);
+      s.delay.connect(this.merge, 0, i);
+      s.lfo.start();
+    });
+    this.merge.connect(this.output.b);
+    this.apply();
+  }
+
+  private apply() {
+    const v = this.values;
+    this.sides.forEach((s, i) => {
+      const base = Math.max(0.5, v.delayTime + (i === 1 ? v.offset : 0)) / 1000; // seconds
+      const swing = base * Math.min(0.95, v.depth);
+      s.lfo.min = Math.max(0.0002, base - swing);
+      s.lfo.max = base + swing;
+      s.lfo.frequency.value = v.frequency;
+      s.lfo.phase = i === 1 ? v.spread : 0;
+      s.feedback.gain.value = v.feedback;
+    });
+  }
+
+  setParam(key: string, value: number) {
+    if (key === 'mix') this.output.fade.value = value;
+    else if (key in this.values) {
+      (this.values as Record<string, number>)[key] = value;
+      this.apply();
+    }
+  }
+
+  dispose() {
+    super.dispose();
+    this.input.dispose();
+    this.output.dispose();
+    this.split.dispose();
+    this.merge.dispose();
+    for (const s of this.sides) {
+      s.delay.dispose();
+      s.lfo.dispose();
+      s.feedback.dispose();
+    }
+    return this;
+  }
+}
+
+// ---------- Sidechain (ducking) ----------
+// The sound goes through a volume control (a gain) that another track pushes down: that
+// track's signal → an envelope follower (how loud it is, smoothed by `release`) → a curve
+// from loudness to gain (silence: 1; at `sensitivity` or louder: 1 − depth) → the gain.
+// The mixer connects the source (`connectSource`): the source track's input, before its
+// own volume and mute, so a muted "ghost" kick still pumps.
+export class Ducker extends Tone.ToneAudioNode {
+  readonly name = 'Ducker';
+  readonly input = new Tone.Gain({ context: this.context, gain: 0 });
+  readonly output = this.input;
+  private follower = new Tone.Follower({ context: this.context, smoothing: 0.2 });
+  private shaper = new Tone.WaveShaper({ context: this.context, length: 2048 });
+  private values = { depth: 0.7, sensitivity: 0.7 };
+  private source: Tone.ToneAudioNode | null = null;
+
+  constructor() {
+    super();
+    // The gain is 0 plus the curve's output: unity when the source is quiet.
+    this.follower.connect(this.shaper);
+    this.shaper.connect(this.input.gain);
+    this.curve();
+  }
+
+  private curve() {
+    const { depth, sensitivity } = this.values;
+    // Sensitivity 1 ducks fully at a quiet level (0.05), 0.01 needs a very loud source.
+    const full = 0.05 + (1 - sensitivity) * 0.6;
+    this.shaper.setMap((x) => (x <= 0 ? 1 : 1 - depth * Math.min(1, x / full)));
+  }
+
+  setParam(key: string, value: number) {
+    if (key === 'release') this.follower.smoothing = value;
+    else if (key in this.values) {
+      (this.values as Record<string, number>)[key] = value;
+      this.curve();
+    }
+  }
+
+  // Listens to `node` (or nothing). Calling it again with the same node does nothing.
+  connectSource(node: Tone.ToneAudioNode | null) {
+    // The same node again: connect anyway (rewiring the source's effects disconnects its
+    // input; connecting a pair twice does nothing).
+    if (node === this.source) {
+      node?.connect(this.follower);
+      return;
+    }
+    if (this.source) this.source.disconnect(this.follower);
+    this.source = node;
+    node?.connect(this.follower);
+  }
+
+  dispose() {
+    this.connectSource(null);
+    super.dispose();
+    this.input.dispose();
+    this.follower.dispose();
+    this.shaper.dispose();
     return this;
   }
 }
@@ -169,7 +304,7 @@ function create(type: EffectType): Tone.ToneAudioNode {
     case 'reverb': return new Tone.Reverb();
     case 'delay': return new Tone.FeedbackDelay();
     case 'pingpong': return new Tone.PingPongDelay();
-    case 'chorus': return new Tone.Chorus().start(); // the wobbling ones run on an LFO: start it
+    case 'chorus': return new StereoChorus();
     case 'phaser': return new Tone.Phaser();
     case 'tremolo': return new Tone.Tremolo().start();
     case 'vibrato': return new Tone.Vibrato();
@@ -182,6 +317,7 @@ function create(type: EffectType): Tone.ToneAudioNode {
     case 'flanger': return new Tone.Chorus({ frequency: 0.3, delayTime: 3, depth: 0.9, feedback: 0.6 }).start();
     case 'gain': return new Tone.Volume(0);
     case 'bitcrusher': return new Crusher();
+    case 'sidechain': return new Ducker();
     case 'chebyshev': return new Tone.Chebyshev();
     case 'pitchshift': return new Tone.PitchShift();
     case 'freqshift': return new Tone.FrequencyShifter();
@@ -200,7 +336,7 @@ function create(type: EffectType): Tone.ToneAudioNode {
 // the node's own properties ('mix' is Tone's `wet`). Some properties are signals (set
 // their `.value`, which can change smoothly while playing), others plain numbers.
 function setParam(node: Tone.ToneAudioNode, key: string, value: number) {
-  if (node instanceof Rack || node instanceof Crusher) return node.setParam(key, value);
+  if (node instanceof Rack || node instanceof Crusher || node instanceof StereoChorus || node instanceof Ducker) return node.setParam(key, value);
   const target = node as unknown as Record<string, unknown>;
   const prop = target[key === 'mix' ? 'wet' : key];
   if (prop instanceof Tone.Param || prop instanceof Tone.Signal) prop.value = value;

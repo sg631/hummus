@@ -8,6 +8,7 @@
 // Read `recorder.recording`, `recorder.countingIn`, `recorder.beat` and `recorder.live`
 // in components: they're reactive.
 import * as Tone from 'tone';
+import { sync } from '$lib/audio/sync';
 import { Metronome } from '$lib/audio/metronome';
 import { initAudio } from '$lib/audio/engine';
 import { beatTicks, ticksToSeconds, type TimeSignature } from '$lib/music/time';
@@ -27,10 +28,16 @@ export interface RecordOptions {
   // Looper: after the count-in, the transport loops `loopTicks` ticks (the play-along with
   // it) while the take keeps recording; each pass can be layered afterwards.
   loopTicks?: number;
+  // false: no microphone (recording what's played on a keyboard: state/live-keys). The
+  // count-in, clicks and play-along work the same; the result has no take.
+  mic?: boolean;
+  // Where in the song the take starts (ticks): lines the start up with the guide's backing
+  // track (audio/sync.ts). Without the guide it's not used.
+  songTick?: number;
 }
 
 export interface RecordedTake {
-  take: Transcription;          // the audio, pitch track and notes; see transcription/types.ts
+  take: Transcription | null;   // the audio, pitch track and notes (null without the mic); see transcription/types.ts
   bpm: number;                  // what it was recorded at
   timeSignature: TimeSignature;
 }
@@ -50,8 +57,11 @@ export class Recorder {
   // Returns false if recording couldn't start (e.g. microphone permission denied).
   async start(options: RecordOptions): Promise<boolean> {
     await initAudio();
-    await liveInput.start();
-    if (!liveInput.listening) return false;
+    const mic = options.mic ?? true;
+    if (mic) {
+      await liveInput.start();
+      if (!liveInput.listening) return false;
+    }
 
     this.options = options;
     this.live = null;
@@ -79,21 +89,23 @@ export class Recorder {
 
     // Transport time 0 starts the count-in; the take starts on the downbeat after it, so
     // the take's time 0 is bar 1, beat 1 and the quantize grid lines up with the clicks.
-    const startAt = Tone.now() + 0.1;
+    const startAt = sync.startAt?.(options.countInBars, options.songTick ?? 0) ?? Tone.now() + 0.1;
     const downbeat = startAt + ticksToSeconds(countInTicks, options.bpm);
     this.takeStart = downbeat;
     transport.start(startAt);
 
-    this.transcriber = new LiveTranscriber(liveInput, (t) => (this.live = t));
-    // The mic hears you sing on a click a little after it was scheduled.
-    this.transcriber.start(downbeat + latency.value);
+    if (mic) {
+      this.transcriber = new LiveTranscriber(liveInput, (t) => (this.live = t));
+      // The mic hears you sing on a click a little after it was scheduled.
+      this.transcriber.start(downbeat + latency.value);
+    }
     this.recording = true;
     return true;
   }
 
   stop(): RecordedTake | null {
-    if (!this.transcriber || !this.options) return null;
-    const take = this.transcriber.stop();
+    if (!this.options) return null;
+    const take = this.transcriber?.stop() ?? null;
     const { bpm, timeSignature } = this.options;
     this.reset();
     return { take, bpm, timeSignature };

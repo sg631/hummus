@@ -22,7 +22,7 @@
   import { Switch } from '$lib/components/ui/switch/index.js';
   import DeviceSelect from '$lib/components/devices/DeviceSelect.svelte';
   import LatencyCalibration from '$lib/components/latency/LatencyCalibration.svelte';
-  import BpmWheel from './BpmWheel.svelte';
+  import BpmInput from './BpmInput.svelte';
   import TimeSignatureInput from './TimeSignatureInput.svelte';
   import { KEY_TONICS, SCALES } from '$lib/music/key';
   import { AUTO_GRID, GRID_OPTIONS } from '$lib/music/quantize';
@@ -61,7 +61,7 @@
       <Tabs.Content value="song" class="flex flex-col gap-5 pt-4">
         <div class="flex items-center gap-3">
           <Label>Tempo <span class="text-muted-foreground font-normal">(quarter notes per minute)</span></Label>
-          <BpmWheel />
+          <BpmInput />
         </div>
 
         <div class="flex flex-col gap-2">

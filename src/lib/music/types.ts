@@ -99,6 +99,15 @@ export interface NoteClip {
   // A recorded clip: the pitch transcription heard, frame by frame (drawn in the piano
   // roll under the notes). Kept when notes are edited.
   pitchTrack?: PitchLine;
+  // Controller lanes drawn in the piano roll (or from a MIDI file), ticks from the clip's
+  // start: `bend` the pitch in semitones (−12 … 12, over every note playing), `mod` the mod
+  // wheel (0 … 1: a vibrato that deepens with it).
+  controllers?: ClipControllers;
+}
+
+export interface ClipControllers {
+  bend?: AutomationPoint[];
+  mod?: AutomationPoint[];
 }
 
 export interface PitchLine {
@@ -131,7 +140,59 @@ export interface Project {
   masterVolume: number;         // dB, everything (0 = as mixed)
   instruments: InstrumentPreset[]; // your own instrument presets (built-in ones: instruments.ts)
   tracks: Track[];
+  masterEffects: Effect[];      // on everything, after every track (the mixer's Master strip)
+  buses: Bus[];                 // shared effect channels and groups (the mixer's bus strips)
+  markers: Marker[];            // named places in the song (the playlist's ruler)
+  automation: AutomationLane[]; // settings that change over the song (music/automation.ts)
+  loop?: LoopRegion;            // the part Song mode repeats, when on
 }
+
+// Song mode's loop: play from `start` to `end` (ticks) over and over.
+export interface LoopRegion {
+  start: number;
+  end: number;
+  enabled: boolean;
+}
+
+// ---------- Automation ----------
+// A setting that changes over the song: a volume fade, a filter sweep, a tempo change… A
+// lane is a line through points; between two points the value moves in a straight line
+// (the time signature steps instead), before the first and after the last it stays put.
+// It plays in Song mode (Pattern mode uses the knobs).
+//
+// A lane starts empty (no target): Ctrl+drag a knob onto it (or right-click a knob →
+// Automate in…) to say what it changes.
+
+export interface AutomationLane {
+  id: string;
+  name?: string;             // an empty lane's name ('Automation 1')
+  target?: AutomationTarget; // what it changes; missing: empty, waiting for a knob
+  points: AutomationPoint[]; // sorted by tick
+  enabled: boolean;          // off: the knob's own value is used
+}
+
+export interface AutomationPoint {
+  tick: number;  // project ticks
+  value: number; // in the setting's own units (dB, -1…1 pan, Hz…)
+  // How the line goes from this point to the next (music/automation.ts `shapeAt`):
+  //   'linear' (default) · 'curve': bent by `tension` (−1 … 1: slow then fast, or fast then
+  //   slow) · 'smooth': an S · 'hold': stays, then jumps · 'wave': wobbles between this
+  //   point's value and the next's, `cycles` times, in the `wave` form
+  shape?: 'linear' | 'curve' | 'smooth' | 'hold' | 'wave';
+  tension?: number;
+  cycles?: number;
+  wave?: 'sine' | 'triangle' | 'square' | 'saw';
+}
+
+// What a lane changes. `ownerId`: a track, a drum row, 'master', 'song' (tempo, beats per
+// bar, key shift, tuning) or an instrument preset's id. Toggles (mute, solo, an effect on or
+// off) are lanes of 0 / 1. Every knob says which of these it is (its `automate` prop).
+export type AutomationTarget =
+  | { kind: 'mix'; ownerId: string; param: 'volume' | 'pan' | 'swing' | 'mute' | 'solo' }
+  | { kind: 'effect'; ownerId: string; effectId: string; param: string } // param 'enabled': on / off
+  | { kind: 'song'; ownerId: 'song'; param: 'bpm' | 'beats' | 'transpose' | 'detune' }
+  | { kind: 'instrument'; ownerId: string; param: string } // ownerId: the preset's id
+  | { kind: 'send'; ownerId: string; param: string }; // a track's send level; param: the bus id
 
 // Every kind of track. Check `kind` to know which one you have:
 //   if (track.kind === 'midi') { track.clips … }
@@ -151,6 +212,33 @@ interface TrackBase {
   swing: number;
   swingUnit: SwingUnit; // which notes swing: 8 (off-beat eighths) or 16 (sixteenths)
   effects: Effect[]; // played in order: the sound goes through the first, then the next…
+  output?: string;   // a bus id: the track plays into that bus (a group) instead of the master
+  sends?: Send[];    // copies of its sound into buses (e.g. a shared reverb), after its volume
+}
+
+// A bus: a channel other tracks feed: send a little of several tracks into one with a
+// reverb (one reverb for all), or route tracks into it (a group, one fader for all of them).
+// It plays into the master.
+export interface Bus {
+  id: string;
+  name: string;
+  volume: number; // dB
+  pan: number;
+  mute: boolean;
+  effects: Effect[];
+}
+
+// A copy of a track's sound into a bus, `level` dB (after the track's volume and pan).
+export interface Send {
+  busId: string;
+  level: number;
+}
+
+// A named place in the song ('Chorus'), shown on the playlist's ruler.
+export interface Marker {
+  id: string;
+  tick: number;
+  name: string;
 }
 
 // One effect on a track. Which effects exist, and their settings, is in effects.ts.
@@ -159,6 +247,7 @@ export interface Effect {
   type: EffectType;               // 'reverb', 'delay', 'chorus'…
   enabled: boolean;               // off: the sound skips it
   params: Record<string, number>; // its settings, by EffectParam.key, e.g. { decay: 2, mix: 0.3 }
+  source?: string;                // sidechain: the track or drum row it listens to
 }
 
 // Notes played by an instrument: a sung melody (transcribed), chords, or notes drawn in
@@ -180,6 +269,8 @@ export interface Placement {
   clipId: string; // a NoteClip id (melody) or DrumPattern id (drums)
   start: number;  // ticks
   length?: number; // ticks
+  offset?: number; // ticks into the clip where the block begins (a split's second half, a trimmed start)
+  muted?: boolean; // shown, not played
 }
 
 // Recorded audio, played back as it is (a voice on top, not transcribed).
@@ -195,6 +286,7 @@ export interface VoiceClip {
   sampleRate: number;
   recordedBpm: number;   // the tempo it was sung to (playing at another tempo stretches it)
   edit?: VoiceEdit;      // trims, speed, pitch… (the audio itself is never changed)
+  muted?: boolean;       // shown, not played (a take you're not using)
 }
 
 // Changes to how a recording plays, all optional. The voice editor sets them.

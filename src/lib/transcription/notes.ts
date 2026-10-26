@@ -12,6 +12,10 @@ export interface NoteSettings {
   minNoteSec: number;      // shorter notes are dropped (the note model already drops < 0.05 s)
   relativeTuning: boolean; // name notes relative to the singer's own tuning, not A440
   referenceSec: number;    // how far (in time) other notes inform a note's tuning reference
+  // Optional lean towards a scale: a note sung within `cents` of the halfway point to an
+  // in-scale neighbour is named as that neighbour. Off unless set (the guide's first
+  // take uses it, so a first melody lands in the backing's key).
+  scaleBias?: { pitchClasses: number[]; cents: number };
 }
 
 export const DEFAULT_NOTE_SETTINGS: NoteSettings = {
@@ -47,7 +51,7 @@ export function buildNotes(
   const built = kept.map((n, i) => {
     const referenceCents = s.relativeTuning ? tuningReference(i, spans, sung, s.referenceSec) : 0;
     const tuned = sung[i] - referenceCents / 100;
-    const pitch = Math.round(tuned);
+    const pitch = nudge(tuned, s.scaleBias);
     const curve = noteCurve(n, analysis.track, audio);
     return {
       id: `${Math.round(n.time * 1000)}:${pitch}`,
@@ -131,6 +135,17 @@ export function tuningReference(
   const agreement = Math.hypot(x, y) / total; // 1 when every offset is the same
   const confidence = (total / (total + REFERENCE_PRIOR_SEC)) * agreement;
   return (Math.atan2(y, x) / (2 * Math.PI)) * 100 * confidence;
+}
+
+// The nearest semitone, or (with a scale bias) the in-scale neighbour when the note
+// sits close enough to halfway towards it.
+function nudge(tuned: number, bias?: NoteSettings['scaleBias']): number {
+  const pitch = Math.round(tuned);
+  if (!bias) return pitch;
+  const inScale = (p: number) => bias.pitchClasses.includes(((p % 12) + 12) % 12);
+  if (inScale(pitch)) return pitch;
+  const neighbour = pitch + (tuned >= pitch ? 1 : -1);
+  return inScale(neighbour) && Math.abs(tuned - pitch) * 100 >= 50 - bias.cents ? neighbour : pitch;
 }
 
 // Other semitones the note could be, from its own audio: the neighbour when the note

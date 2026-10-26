@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrangementEnd, contentLength, expandPlacements, patternProject, placementAt, shiftProject } from './arrange';
+import { arrangementEnd, contentLength, expandPlacements, patternProject, placementAt, shiftProject, songLength, splitPlacement } from './arrange';
 import type { DrumTrack, MidiTrack, NoteClip, Placement, Project } from './types';
 
 const BAR = 1920; // 4/4
@@ -57,13 +57,23 @@ describe('arrangement', () => {
   });
 
   const song = (): Project => ({
-    name: 's', bpm: 120, timeSignature: [4, 4], key: 'C', scale: 'major', detune: 0, transpose: 0, masterVolume: 0, instruments: [],
+    name: 's', bpm: 120, timeSignature: [4, 4], key: 'C', scale: 'major', detune: 0, transpose: 0, masterVolume: 0, instruments: [], masterEffects: [], automation: [], buses: [], markers: [],
     tracks: [
       { id: 'm', kind: 'midi', name: 'M', volume: 0, pan: 0, mute: false, swing: 0.5, swingUnit: 8, effects: [], instrument: 'piano',
         clips: [clip], placements: [{ id: 'p1', clipId: 'c', start: 0 }, { id: 'p2', clipId: 'c', start: BAR * 2 }], current: 'c' },
       { id: 'd', kind: 'drums', name: 'D', volume: 0, pan: 0, mute: false, swing: 0.5, swingUnit: 8, effects: [], rows: [],
         patterns: [{ id: 'pat', name: 'P', bars: 2, steps: {} }], placements: [{ id: 'dp', clipId: 'pat', start: BAR }], current: 'pat' }
     ]
+  });
+
+  it('knows how long the song is: the last block, pattern or recording', () => {
+    const p = song();
+    expect(songLength(p)).toBe(BAR * 3); // melody block at bar 3 (one bar) and drums bars 2–3
+    p.tracks.push({ id: 'v', kind: 'voice', name: 'V', volume: 0, pan: 0, mute: false, swing: 0.5, swingUnit: 8, effects: [],
+      clips: [{ id: 'r', start: BAR * 4, audio: new Float32Array(48000 * 2), sampleRate: 48000, recordedBpm: 120 }] });
+    expect(songLength(p)).toBe(BAR * 5); // 2 s at 120 BPM = one bar, from bar 5
+    const drumsOnly: Project = { ...p, tracks: [{ ...(p.tracks[1] as DrumTrack), placements: [] }] };
+    expect(songLength(drumsOnly)).toBe(BAR * 2); // looping all song: its pattern once
   });
 
   it('pattern mode plays just the current clip or pattern, looped', () => {
@@ -79,5 +89,25 @@ describe('arrangement', () => {
     const melody = shifted.tracks[0] as MidiTrack;
     expect(melody.clips[0].notes.map((n) => n.start)).toEqual([0, 1440]); // the second placement, now at 0
     expect((shifted.tracks[1] as DrumTrack).placements[0].start).toBe(-BAR); // started earlier: picks up part-way
+  });
+});
+
+describe('splitting and offsets', () => {
+  const BAR = 1920;
+  const clip: NoteClip = { id: 'c', start: 0, duration: BAR, notes: [0, 480, 960, 1440].map((t, i) => ({ id: `n${i}`, pitch: 60 + i, start: t, duration: 240, velocity: 0.8 })) };
+  const starts = (ps: Placement[]) => expandPlacements([clip], ps, BAR).flatMap((c) => c.notes.map((n) => c.start + n.start));
+  it('a split block carries on from the same point of the clip', () => {
+    const p: Placement = { id: 'p', clipId: 'c', start: 0 };
+    const second = splitPlacement(p, 960, BAR)!;
+    expect(p.length).toBe(960);
+    expect(second).toMatchObject({ start: 960, length: 960, offset: 960 });
+    expect(starts([p, second])).toEqual([0, 480, 960, 1440]); // the same notes as before
+  });
+  it("a trimmed start skips the clip's beginning, and loops after", () => {
+    expect(starts([{ id: 'p', clipId: 'c', start: 0, offset: 480, length: BAR }])).toEqual([0, 480, 960, 1440]);
+    expect(expandPlacements([clip], [{ id: 'p', clipId: 'c', start: 0, offset: 480, length: BAR }], BAR).flatMap((c) => c.notes.map((n) => n.pitch))).toEqual([61, 62, 63, 60]);
+  });
+  it('muted blocks are silent', () => {
+    expect(starts([{ id: 'p', clipId: 'c', start: 0, muted: true }])).toEqual([]);
   });
 });

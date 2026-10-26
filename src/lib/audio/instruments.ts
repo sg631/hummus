@@ -39,35 +39,44 @@ export function loadSamples(id: string): Promise<Record<string, AudioBuffer>> {
 }
 
 // Loads every sampled instrument these presets use.
-export async function loadPresets(presets: InstrumentPreset[]) {
-  await Promise.all(
-    presets
-      .filter((p) => p.engine === 'sampler')
-      .map((p) => {
-        const id = String(p.params.sample ?? 'piano');
-        return id.startsWith('u:') ? userSampleBuffer(id) : loadSamples(id);
-      })
+// Returns the names of any that couldn't load (offline and not saved yet): the rest play.
+export async function loadPresets(presets: InstrumentPreset[]): Promise<string[]> {
+  const samplers = presets.filter((p) => p.engine === 'sampler');
+  const results = await Promise.allSettled(
+    samplers.map((p) => {
+      const id = String(p.params.sample ?? 'piano');
+      return id.startsWith('u:') ? userSampleBuffer(id) : loadSamples(id);
+    })
   );
+  return samplers.filter((_, i) => results[i].status === 'rejected').map((p) => p.name);
 }
 
 function createSampler(preset: InstrumentPreset): Tone.Sampler {
   const id = String(preset.params.sample ?? 'piano');
   const sampler = new Tone.Sampler();
   // One of your sounds: a single recording, played at other pitches from its own note.
+  // `ready`: its recordings are in (exporting audio waits for it).
+  const ready = (p: Promise<unknown>) => Object.assign(sampler, { ready: p });
   if (id.startsWith('u:')) {
-    userSampleBuffer(id).then((buffer) => {
-      if (buffer && !sampler.disposed) sampler.add(String(preset.params.root ?? 'C4') as Tone.Unit.Note, buffer);
-    });
+    ready(
+      userSampleBuffer(id).then((buffer) => {
+        if (buffer && !sampler.disposed) {
+          sampler.add(String(preset.params.root ?? 'C4') as Tone.Unit.Note, buffer);
+          hasSamples.add(sampler);
+        }
+      })
+    );
     return sampler;
   }
   // Loaded already (loadPresets): the recordings go in straight away. Otherwise as they arrive.
-  loadSamples(id).then(
+  ready(loadSamples(id).then(
     (buffers) => {
       if (sampler.disposed) return;
       for (const [note, buffer] of Object.entries(buffers)) sampler.add(note as Tone.Unit.Note, buffer);
+      if (Object.keys(buffers).length) hasSamples.add(sampler);
     },
     (e) => console.warn(`Could not load the ${id} samples:`, e)
-  );
+  ));
   return sampler;
 }
 
@@ -119,6 +128,13 @@ let preview: { key: string; instrument: Instrument } | null = null;
 let lastPreview = 0; // Tone needs each note to start strictly after the last one
 
 // Plays one note of a preset, straight to the speakers (no track effects).
+// Whether an instrument can sound now: a sampler needs its recordings (Tone throws without
+// them, and calls a sampler whose download failed "loaded": it has none to wait for).
+const hasSamples = new WeakSet<Tone.Sampler>();
+export function canPlay(instrument: Instrument): boolean {
+  return !(instrument instanceof Tone.Sampler) || (instrument.loaded && hasSamples.has(instrument));
+}
+
 export async function previewNote(preset: InstrumentPreset, pitch: number) {
   await initAudio();
   await loadPresets([preset]);
@@ -126,8 +142,10 @@ export async function previewNote(preset: InstrumentPreset, pitch: number) {
   if (preview?.key !== key) {
     preview?.instrument.dispose();
     preview = { key, instrument: createInstrument(preset).toDestination() };
-    await new Promise((r) => setTimeout(r, 0)); // a sampler takes its (loaded) recordings a moment later
+    // A sampler takes its recordings a moment later (or not at all: offline, not saved).
+    await (preview.instrument as { ready?: Promise<unknown> }).ready?.catch(() => {});
   }
+  if (!canPlay(preview.instrument)) return;
   lastPreview = Math.max(Tone.now(), lastPreview + 0.01);
   preview.instrument.triggerAttackRelease(midiToHz(pitch), 0.5, lastPreview);
 }
@@ -188,6 +206,7 @@ export function loadDrumSound(sound: string): Promise<AudioBuffer | null> {
       loading = sample ? Tone.ToneAudioBuffer.fromUrl(sample.url).then((b) => b.get() ?? null, () => null) : Promise.resolve(null);
     }
     drumBuffers.set(sound, loading);
+    void loading.then((b) => b || drumBuffers.delete(sound)); // failed (offline?): try again next time
   }
   return loading;
 }
@@ -202,7 +221,8 @@ function recordedDrum(sound: string): Drum {
     output,
     play: (time) => {
       if (!buffer) return;
-      const hit = new Tone.ToneBufferSource(buffer).connect(output);
+      // On the output's own context: when exporting, that's the offline one.
+      const hit = new Tone.ToneBufferSource({ url: buffer, context: output.context }).connect(output);
       hit.onended = () => hit.dispose();
       hit.start(time);
     },

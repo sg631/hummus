@@ -11,6 +11,7 @@
   import { effectDefinition, type EffectType } from '$lib/music/effects';
   import type { Effect } from '$lib/music/types';
   import { contextMenu } from '$lib/state/context-menu.svelte';
+  import { automatable } from '$lib/state/automation.svelte';
   import { addEffect, moveEffect, moveEffectTo, removeEffect } from '$lib/state/project.svelte';
   import AddEffectDialog from './AddEffectDialog.svelte';
   import EffectDialog from './EffectDialog.svelte';
@@ -97,7 +98,9 @@
       <button class="flex-1 truncate text-left {effect.enabled ? '' : 'text-muted-foreground line-through'}" onclick={() => open(effect.id)}>
         {effectDefinition(effect.type).name}
       </button>
-      <Switch size="sm" bind:checked={effect.enabled} aria-label="Effect on" />
+      <span use:automatable={{ kind: 'effect', ownerId, effectId: effect.id, param: 'enabled' }} title="On / off (Ctrl+drag onto an automation lane to automate)" class="flex">
+        <Switch size="sm" bind:checked={effect.enabled} aria-label="Effect on" />
+      </span>
       <button class="text-muted-foreground hover:text-foreground px-1" onclick={() => removeEffect(ownerId, effect.id)} aria-label="Remove effect">✕</button>
     </div>
   {/each}

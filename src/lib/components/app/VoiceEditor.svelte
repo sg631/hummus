@@ -181,11 +181,11 @@
     <!-- How the selected recording plays. -->
     <div class="flex items-end gap-x-4 overflow-x-auto border-b px-3 py-2 text-xs whitespace-nowrap">
       <span class="self-center font-semibold">Recording</span>
-      <Knob label="Speed" size={30} bind:value={() => e.speed ?? 1, (v) => set(clip, { speed: v })} min={0.5} max={2} step={0.01} defaultValue={1} format={(v) => `${v.toFixed(2)}×`} />
-      <Knob label="Pitch" size={30} bind:value={() => e.pitch ?? 0, (v) => set(clip, { pitch: v })} min={-12} max={12} step={0.5} defaultValue={0} format={(v) => `${v > 0 ? '+' : ''}${v} st`} />
-      <Knob label="Gain" size={30} bind:value={() => e.gain ?? 0, (v) => set(clip, { gain: v })} min={-24} max={24} step={0.5} defaultValue={0} format={formatDb} />
-      <Knob label="Fade in" size={30} bind:value={() => e.fadeIn ?? 0, (v) => set(clip, { fadeIn: v })} min={0} max={2} step={0.05} defaultValue={0} format={(v) => `${v.toFixed(2)} s`} />
-      <Knob label="Fade out" size={30} bind:value={() => e.fadeOut ?? 0, (v) => set(clip, { fadeOut: v })} min={0} max={2} step={0.05} defaultValue={0} format={(v) => `${v.toFixed(2)} s`} />
+      <Knob automate={false} label="Speed" size={30} bind:value={() => e.speed ?? 1, (v) => set(clip, { speed: v })} min={0.5} max={2} step={0.01} defaultValue={1} format={(v) => `${v.toFixed(2)}×`} />
+      <Knob automate={false} label="Pitch" size={30} bind:value={() => e.pitch ?? 0, (v) => set(clip, { pitch: v })} min={-12} max={12} step={0.5} defaultValue={0} format={(v) => `${v > 0 ? '+' : ''}${v} st`} />
+      <Knob automate={false} label="Gain" size={30} bind:value={() => e.gain ?? 0, (v) => set(clip, { gain: v })} min={-24} max={24} step={0.5} defaultValue={0} format={formatDb} />
+      <Knob automate={false} label="Fade in" size={30} bind:value={() => e.fadeIn ?? 0, (v) => set(clip, { fadeIn: v })} min={0} max={2} step={0.05} defaultValue={0} format={(v) => `${v.toFixed(2)} s`} />
+      <Knob automate={false} label="Fade out" size={30} bind:value={() => e.fadeOut ?? 0, (v) => set(clip, { fadeOut: v })} min={0} max={2} step={0.05} defaultValue={0} format={(v) => `${v.toFixed(2)} s`} />
       <label class="flex flex-col items-center gap-2 self-center">
         <span class="text-muted-foreground text-[10px] font-bold tracking-widest uppercase">Reverse</span>
         <Switch size="sm" bind:checked={() => !!e.reverse, (v) => set(clip, { reverse: v })} />
@@ -252,7 +252,7 @@
         {/if}
       </svg>
     {:else}
-      <p class="text-muted-foreground p-6 text-sm">No recording yet: press Record and sing (recordings aren't saved with the project).</p>
+      <p class="text-muted-foreground p-6 text-sm">No recording yet: press Record and sing.</p>
     {/if}
   </div>
 </div>

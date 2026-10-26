@@ -8,7 +8,6 @@
   To add a step: add it to STEPS, and an id to the element it explains.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Walkthrough } from '$lib/components/ui/walkthrough/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import type { Step } from '$lib/components/ui/walkthrough/ctx';
@@ -22,6 +21,13 @@
 			title: 'Welcome to hum-daw',
 			description:
 				'Sing or hum a melody and it becomes notes you can play on any instrument, with drums, your voice and effects. This tour takes a minute; skip it any time.'
+		},
+		{
+			target: 'tour-project',
+			position: 'bottom' as const,
+			title: 'Your song, saved as you go',
+			description:
+				"The song's name (click to rename) and whether it's saved: it saves itself a moment after each change, voice recordings included. ↶ ↷ undo and redo anything (Ctrl+Z, Ctrl+Y); Edit → History jumps back further. File: new, open, export audio (WAV, MP3) or MIDI, and keep projects in a folder on your computer."
 		},
 		{
 			target: 'tour-add-tracks',
@@ -52,6 +58,26 @@
 				'Select a Melody or Voice track and press Record. After a bar of clicks, sing. Press Stop recording and your notes appear.'
 		},
 		{
+			target: 'tour-input',
+			position: 'bottom' as const,
+			title: 'Or play it: keyboard and MIDI',
+			description:
+				'🎤 records your voice; click for ⌨ to record what you play instead. Ctrl+K makes the computer keyboard play the selected track (A S D F G H, then Q W E R T Y: a semitone each; Input → Note key layout for a piano layout). A MIDI keyboard works too (Input menu).',
+			keys: [
+				['Z  X  C  V', 'octaves (held; on chord tracks: Z / X octave, C / V softer / louder)'],
+				['1 … 9, 0 · −', 'held: up (or with −, down) that many semitones'],
+				['` (hold)', 'slide into the next note'],
+				['Ctrl+K', 'keyboard: notes ↔ shortcuts']
+			]
+		},
+		{
+			target: 'tour-loop',
+			position: 'bottom' as const,
+			title: 'Loop',
+			description:
+				"⟳ repeats the loop region while the song plays. Set the region on the strip at the top of the playlist's ruler: drag across it, drag the band to move it, its ends to resize."
+		},
+		{
 			target: 'tour-record',
 			position: 'bottom' as const,
 			title: 'Sing outside your range: shift keys',
@@ -76,7 +102,14 @@
 			position: 'bottom' as const,
 			title: 'Playlist: build the song',
 			description:
-				'The whole song, a lane per track. Click a lane to place its clip or drum pattern, drag to move, drag the edge to repeat it, Ctrl-drag to copy, double-click to edit. Copies share their notes: change the clip once and every copy changes ("Make unique" splits one off).'
+				'The whole song, a lane per track. Click a lane to place its clip or drum pattern, drag to move, drag the edge to repeat it, Ctrl-drag to copy, double-click to edit. Copies share their notes: change the clip once and every copy changes ("Make unique" splits one off). Automation lanes sit underneath: "+ Lane" makes one, then Ctrl+drag any knob (or the tempo, or the time signature) onto it, or right-click a knob → Automate in…; click points to draw a fade or sweep.'
+		},
+		{
+			target: 'tour-mixer',
+			position: 'bottom' as const,
+			title: 'Mixer',
+			description:
+				'Every track side by side: a fader with a level meter, pan, effects, mute and solo, and the Master strip for effects on the whole song. Drag any tab to move its panel: dock it beside another, add it as a tab, or drop it anywhere to float it as a window; drag the borders between panels to resize them.'
 		},
 		{
 			target: 'tour-play',
@@ -103,7 +136,7 @@
 			position: 'bottom' as const,
 			title: 'Save',
 			description:
-				"Keeps your song in this browser; it opens again next time. Voice recordings aren't saved."
+				'Saves right now (it also saves by itself a moment after each change), recordings included. Your songs are in File → Open.'
 		},
 		{
 			title: "You're set",
@@ -112,9 +145,13 @@
 		}
 	];
 
-	onMount(() => {
-		// The first visit only; a moment's wait lets the layout settle so the spotlight lands.
-		if (!tourSeen()) setTimeout(startTour, 600);
+	// The first visit only, once the studio is on screen (not the home page); a moment's
+	// wait lets the layout settle so the spotlight lands.
+	let offered = false;
+	$effect(() => {
+		if (offered || tourSeen()) return;
+		offered = true;
+		setTimeout(startTour, 600);
 	});
 </script>
 

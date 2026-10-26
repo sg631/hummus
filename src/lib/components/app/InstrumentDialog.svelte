@@ -189,6 +189,7 @@
                       defaultValue={toSlider(p, p.default)}
                       format={(s) => formatParam(p, fromSlider(p, s))}
                       disabled={builtIn}
+                      automate={preset ? { kind: 'instrument', ownerId: preset.id, param: p.key } : false}
                     />
                   {:else}
                     <Knob
@@ -201,6 +202,7 @@
                       defaultValue={p.default}
                       format={(v) => formatParam(p, v)}
                       disabled={builtIn}
+                      automate={preset ? { kind: 'instrument', ownerId: preset.id, param: p.key } : false}
                     />
                   {/if}
                 </div>

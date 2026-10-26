@@ -7,7 +7,13 @@
 import { defaultParams, type EffectType } from '$lib/music/effects';
 import { DEFAULT_PRESET_ID, isBuiltIn, presetById, type InstrumentPreset } from '$lib/music/instruments';
 import { DEFAULT_KIT, drumName, type DrumSound } from '$lib/music/drums';
+import { targetInfo, targetKey } from '$lib/music/automation';
+import { repairProject } from '$lib/music/repair';
+import { parseMidi } from '$lib/music/midi-import';
 import {
+  type AutomationLane,
+  type AutomationTarget,
+  type Bus,
   type DrumPattern,
   type DrumRow,
   type DrumTrack,
@@ -21,18 +27,28 @@ import {
   type VoiceTrack
 } from '$lib/music/types';
 
-export const project = $state<Project>({
-  name: 'Untitled',
-  bpm: 100,
-  timeSignature: [4, 4],
-  key: 'C',
-  scale: 'major',
-  detune: 0,
-  transpose: 0,
-  masterVolume: 0,
-  instruments: [],
-  tracks: []
-});
+// A new, empty song.
+export function blankProject(name = 'Untitled'): Project {
+  return {
+    name,
+    bpm: 100,
+    timeSignature: [4, 4],
+    key: 'C',
+    scale: 'major',
+    detune: 0,
+    transpose: 0,
+    masterVolume: 0,
+    instruments: [],
+    tracks: [],
+    masterEffects: [],
+    buses: [],
+    markers: [],
+    automation: [],
+    loop: { start: 0, end: 4 * 1920, enabled: false }
+  };
+}
+
+export const project = $state<Project>(blankProject());
 
 export const selection = $state({
   trackId: null as string | null, // the track the piano roll / drum grid shows, and recording goes to
@@ -93,6 +109,7 @@ export function addDrumRow(track: DrumTrack, sound: DrumSound) {
 export function removeDrumRow(track: DrumTrack, rowId: string) {
   track.rows = track.rows.filter((r) => r.id !== rowId);
   for (const p of track.patterns) delete p.steps[rowId];
+  dropAutomation((t) => t.ownerId === rowId);
 }
 
 // ---------- Clips, patterns and the playlist ----------
@@ -229,6 +246,9 @@ export function duplicateTrack(id: string): Track | undefined {
 }
 
 export function removeTrack(id: string) {
+  const track = project.tracks.find((t) => t.id === id);
+  const owners = new Set([id, ...(track?.kind === 'drums' ? track.rows.map((r) => r.id) : [])]);
+  dropAutomation((t) => owners.has(t.ownerId));
   project.tracks = project.tracks.filter((t) => t.id !== id);
   if (selection.trackId === id) {
     selection.trackId = null;
@@ -262,8 +282,12 @@ export function removePreset(id: string) {
 // Effects belong to a track, or to a drum row (each row is an instrument of its own). The
 // functions take the owner's id, whichever it is.
 
-// The track or drum row with this id, as stored (so changes show), and a name for it.
+// The track or drum row with this id ('master': the master's effects), as stored (so
+// changes show), and a name for it.
 export function effectOwner(id: string): { name: string; effects: Effect[] } | undefined {
+  if (id === 'master') return { name: 'Master', get effects() { return project.masterEffects; }, set effects(v) { project.masterEffects = v; } };
+  const bus = project.buses.find((b) => b.id === id);
+  if (bus) return { name: bus.name, get effects() { return bus.effects; }, set effects(v) { bus.effects = v; } };
   for (const t of project.tracks) {
     if (t.id === id) return { name: t.name, get effects() { return t.effects; }, set effects(v) { t.effects = v; } };
     if (t.kind === 'drums') {
@@ -285,6 +309,212 @@ export function addEffect(trackId: string, type: EffectType): Effect | undefined
 export function removeEffect(trackId: string, effectId: string) {
   const track = effectOwner(trackId);
   if (track) track.effects = track.effects.filter((e) => e.id !== effectId);
+  dropAutomation((t) => t.kind === 'effect' && t.effectId === effectId);
+}
+
+// ---------- Buses ----------
+// Shared effect channels (send a little of several tracks into one reverb) and groups (route
+// tracks into one fader). They play into the master.
+
+export function addBus(name = 'Bus', effects: Effect[] = []): Bus {
+  const names = new Set(project.buses.map((b) => b.name));
+  let unique = name;
+  for (let i = 2; names.has(unique); i++) unique = `${name} ${i}`;
+  project.buses.push({ id: crypto.randomUUID(), name: unique, volume: 0, pan: 0, mute: false, effects });
+  return project.buses[project.buses.length - 1];
+}
+
+// A bus with a reverb, and `trackId` sending into it: the quick "add reverb the shared way".
+export function addReverbBus(trackId: string): Bus {
+  const bus = addBus('Reverb', [{ id: crypto.randomUUID(), type: 'reverb', enabled: true, params: { ...defaultParams('reverb'), mix: 1 } }]);
+  setSend(trackId, bus.id, -8);
+  return bus;
+}
+
+export function removeBus(id: string) {
+  project.buses = project.buses.filter((b) => b.id !== id);
+  for (const t of project.tracks) {
+    if (t.output === id) delete t.output;
+    if (t.sends) t.sends = t.sends.filter((s) => s.busId !== id);
+  }
+  dropAutomation((t) => t.ownerId === id || (t.kind === 'send' && t.param === id));
+}
+
+// How much of a track goes to a bus (dB); null takes the send away.
+export function setSend(trackId: string, busId: string, level: number | null) {
+  const t = project.tracks.find((x) => x.id === trackId);
+  if (!t) return;
+  const sends = (t.sends ?? []).filter((s) => s.busId !== busId);
+  if (level !== null) sends.push({ busId, level });
+  t.sends = sends;
+}
+
+// ---------- Bouncing ----------
+
+// Renders a track to audio as a new voice track (right after it), and mutes the original:
+// to free up the computer, or to edit the result as a recording.
+export async function bounceToAudio(trackId: string): Promise<VoiceTrack | undefined> {
+  const index = project.tracks.findIndex((t) => t.id === trackId);
+  const original = project.tracks[index];
+  if (!original) return;
+  const { bounceTrack } = await import('$lib/audio/export');
+  const { songLength } = await import('$lib/music/arrange');
+  const { cloneDeep } = await import('./clone');
+  const end = songLength(project);
+  if (!end) return;
+  const { audio, sampleRate } = await bounceTrack(cloneDeep(project) as Project, trackId, end);
+  const track: VoiceTrack = { ...base(`${original.name} (audio)`), kind: 'voice', clips: [{ id: crypto.randomUUID(), start: 0, audio, sampleRate, recordedBpm: project.bpm }] };
+  project.tracks.splice(index + 1, 0, track);
+  original.mute = true;
+  selection.trackId = track.id;
+  return project.tracks[index + 1] as VoiceTrack;
+}
+
+// ---------- MIDI import ----------
+
+// Adds a MIDI file's parts as tracks (music/midi-import.ts). An empty song also takes the
+// file's tempo and time signature. Returns how many tracks were added.
+export async function importMidi(file: File): Promise<number> {
+  const parsed = parseMidi(await file.arrayBuffer(), project.timeSignature);
+  if (!project.tracks.length) {
+    if (parsed.bpm) project.bpm = Math.max(40, Math.min(240, parsed.bpm));
+    if (parsed.timeSignature) project.timeSignature = parsed.timeSignature;
+  }
+  for (const t of parsed.tracks) {
+    if (t.kind === 'midi') {
+      const track = addMidiTrack(t.name);
+      track.instrument = t.instrument;
+      track.poly = t.poly;
+      const clip = track.clips[0];
+      clip.notes = t.notes;
+      clip.duration = Math.max(0, ...t.notes.map((n) => n.start + n.duration));
+      if (t.controllers) clip.controllers = t.controllers;
+    } else {
+      add<DrumTrack>({ ...base(t.name), kind: 'drums', rows: t.rows, patterns: t.patterns, placements: t.placements, current: t.patterns[0]?.id });
+    }
+  }
+  return parsed.tracks.length;
+}
+
+// ---------- Markers and time ----------
+
+export function addMarker(tick: number, name?: string) {
+  project.markers.push({ id: crypto.randomUUID(), tick: Math.max(0, Math.round(tick)), name: name ?? `Marker ${project.markers.length + 1}` });
+  project.markers.sort((a, b) => a.tick - b.tick);
+}
+
+export function removeMarker(id: string) {
+  project.markers = project.markers.filter((m) => m.id !== id);
+}
+
+// Everything at or after `at` (blocks, recordings, automation points, markers, the loop)
+// moves later by `length` ticks: room for a new intro, an extra bar…
+export function insertTime(at: number, length: number) {
+  const later = (t: number) => (t >= at ? t + length : t);
+  for (const t of project.tracks) {
+    if (t.kind === 'voice') for (const c of t.clips) c.start = later(c.start);
+    else for (const p of t.placements) p.start = later(p.start);
+  }
+  for (const l of project.automation) for (const p of l.points) p.tick = later(p.tick);
+  for (const m of project.markers) m.tick = later(m.tick);
+  if (project.loop && project.loop.start >= at) Object.assign(project.loop, { start: project.loop.start + length, end: project.loop.end + length });
+}
+
+// Takes `from`–`to` out of the song: blocks, recordings, points and markers starting inside
+// it go, and everything after moves earlier.
+export function deleteTime(from: number, to: number) {
+  const length = to - from;
+  const inside = (t: number) => t >= from && t < to;
+  const shift = (t: number) => (t >= to ? t - length : t);
+  for (const t of project.tracks) {
+    if (t.kind === 'voice') t.clips = t.clips.filter((c) => !inside(c.start)).map((c) => Object.assign(c, { start: shift(c.start) }));
+    else t.placements = t.placements.filter((p) => !inside(p.start)).map((p) => Object.assign(p, { start: shift(p.start) }));
+  }
+  for (const l of project.automation) l.points = l.points.filter((p) => !inside(p.tick)).map((p) => Object.assign(p, { tick: shift(p.tick) }));
+  project.markers = project.markers.filter((m) => !inside(m.tick)).map((m) => Object.assign(m, { tick: shift(m.tick) }));
+}
+
+// ---------- Sidechain ----------
+
+// What a sidechain can listen to: every track and drum row except `ownerId` (and, for a
+// drum row, not its own track: it would duck itself).
+export function sidechainSources(ownerId: string): { id: string; name: string }[] {
+  const out: { id: string; name: string }[] = [];
+  for (const t of project.tracks) {
+    const holdsOwner = t.kind === 'drums' && t.rows.some((r) => r.id === ownerId);
+    if (t.id !== ownerId && !holdsOwner) out.push({ id: t.id, name: t.name });
+    if (t.kind === 'drums') for (const r of t.rows) if (r.id !== ownerId) out.push({ id: r.id, name: effectOwner(r.id)?.name ?? 'Drum row' });
+  }
+  return out;
+}
+
+// Makes `ownerId` duck whenever `sourceId` plays: adds a sidechain effect listening to it
+// (or points the one it has at it). Returns the effect.
+export function addSidechain(ownerId: string, sourceId: string): Effect | undefined {
+  const owner = effectOwner(ownerId);
+  if (!owner) return;
+  const existing = owner.effects.find((e) => e.type === 'sidechain');
+  if (existing) {
+    existing.source = sourceId;
+    existing.enabled = true;
+    return existing;
+  }
+  const effect = addEffect(ownerId, 'sidechain');
+  if (effect) effect.source = sourceId;
+  return effect;
+}
+
+// ---------- Automation ----------
+// Lanes of settings that change over the song (music/automation.ts); edited in the playlist.
+
+// A new, empty lane (no setting yet: drag a knob onto it). Returns it as stored.
+export function addEmptyLane(): AutomationLane {
+  const names = new Set(project.automation.map((l) => l.name));
+  let name = 'Automation 1';
+  for (let i = 2; names.has(name); i++) name = `Automation ${i}`;
+  project.automation.push({ id: crypto.randomUUID(), name, enabled: true, points: [] });
+  return project.automation[project.automation.length - 1];
+}
+
+// Points a lane at a setting (a knob dropped on it). A lane that already had points for
+// another setting starts again, flat at the new setting's value. Undefined if the setting
+// already has a lane of its own (that one is returned instead, untouched).
+export function assignLane(laneId: string, target: AutomationTarget): AutomationLane | undefined {
+  const lane = project.automation.find((l) => l.id === laneId);
+  const info = targetInfo(project, target);
+  if (!lane || !info) return;
+  const other = project.automation.find((l) => l !== lane && l.target && targetKey(l.target) === targetKey(target));
+  if (other) return other;
+  const same = lane.target && targetKey(lane.target) === targetKey(target);
+  lane.target = target;
+  lane.enabled = true;
+  if (!same || !lane.points.length) lane.points = [{ tick: 0, value: info.value }];
+  return lane;
+}
+
+// The lane for a setting: the existing one, or a new one starting flat at the knob's value.
+export function addAutomation(target: AutomationTarget): AutomationLane | undefined {
+  const existing = project.automation.find((l) => l.target && targetKey(l.target) === targetKey(target));
+  if (existing) return existing;
+  if (!targetInfo(project, target)) return;
+  return assignLane(addEmptyLane().id, target);
+}
+
+export function removeAutomation(id: string) {
+  project.automation = project.automation.filter((l) => l.id !== id);
+}
+
+// The lane automating a setting, if there is one (`ownerId` + `param`, and `effectId` for
+// an effect's setting).
+export function automationFor(ownerId: string, param: string, effectId?: string): AutomationLane | undefined {
+  return project.automation.find(
+    (l) => !!l.target && l.target.ownerId === ownerId && l.target.param === param && (l.target.kind === 'effect' ? l.target.effectId === effectId : !effectId)
+  );
+}
+
+// Lanes whose setting is gone (a track, drum row or effect deleted) go with it.
+function dropAutomation(gone: (t: AutomationTarget) => boolean) {
+  project.automation = project.automation.filter((l) => !l.target || !gone(l.target));
 }
 
 // Moves an effect earlier (-1) or later (+1) in the chain.
@@ -350,26 +580,31 @@ export function addVoiceClip(trackId: string, clip: VoiceClip) {
   if (track?.kind === 'voice') track.clips.push(clip);
 }
 
-// ---------- Saving ----------
-// localStorage only holds text: the project is saved as JSON. Voice recordings
-// (Float32Array) are too big for it, so voice tracks are saved without their clips.
+// ---------- Opening ----------
+// Saving, the project list and project files are in state/projects.svelte.ts; this puts a
+// saved project in place, bringing older saves up to date first.
 
-const STORAGE_KEY = 'hum-daw:project';
-
-export function saveProject() {
-  const copy = $state.snapshot(project) as Project;
-  copy.tracks = copy.tracks.map((t) => (t.kind === 'voice' ? { ...t, clips: [] } : t));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(copy));
+// Replaces the song with `saved` (a plain copy: from the database, a file, or an undo step
+// is restored elsewhere). Clears the selection. Returns what had to be repaired (broken
+// numbers: music/repair.ts), if anything.
+export function applyProject(saved: Project): string[] {
+  upgrade(saved);
+  const fixed = repairProject(saved);
+  const fresh = { ...blankProject(), ...saved };
+  for (const key of Object.keys(project) as (keyof Project)[]) if (!(key in fresh)) delete project[key];
+  Object.assign(project, fresh);
+  selection.trackId = project.tracks[0]?.id ?? null;
+  selection.noteIds = [];
+  return fixed;
 }
 
-export function loadProject() {
-  const text = localStorage.getItem(STORAGE_KEY);
-  if (!text) return;
-  try {
-    const saved = JSON.parse(text) as Project;
+// Older saves: fields added since get their defaults.
+function upgrade(saved: Project) {
+  {
     for (const track of saved.tracks ?? []) {
       track.effects = upgradeEffects(track.effects);
       track.pan ??= 0; // saved before tracks had pan
+      track.solo ??= false;
       track.swing ??= 0.5; // …or swing on every track
       track.swingUnit ??= 8;
       if (track.kind === 'drums') upgradeDrums(track);
@@ -379,9 +614,12 @@ export function loadProject() {
     saved.detune ??= 0;
     saved.transpose ??= 0; // saved before key shift and master volume
     saved.masterVolume ??= 0;
-    Object.assign(project, saved);
-  } catch {
-    console.warn('The saved project could not be read; starting a new one.');
+    saved.masterEffects = upgradeEffects(saved.masterEffects ?? []); // saved before the mixer
+    saved.automation ??= [];
+    saved.buses ??= []; // saved before buses and markers
+    saved.markers ??= [];
+    saved.loop ??= { start: 0, end: 4 * 1920, enabled: false };
+    saved.tracks ??= [];
   }
 }
 

@@ -141,7 +141,7 @@
 
     {#if audio}
       <div class="flex flex-wrap items-end gap-4">
-        <Knob label="Sensitivity" size={36} bind:value={() => sensitivity, (v) => ((sensitivity = v), detect())} min={0} max={1} step={0.05} defaultValue={0.5} format={(v) => `${Math.round(v * 100)}%`} />
+        <Knob automate={false} label="Sensitivity" size={36} bind:value={() => sensitivity, (v) => ((sensitivity = v), detect())} min={0} max={1} step={0.05} defaultValue={0.5} format={(v) => `${Math.round(v * 100)}%`} />
         <label class="flex flex-col gap-1 text-xs">
           Name
           <input bind:value={name} class="bg-background w-40 rounded border px-2 py-1 text-sm" />

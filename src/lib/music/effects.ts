@@ -66,8 +66,18 @@ export const EFFECTS = [
   // ---------- Modulation ----------
   {
     type: 'chorus', name: 'Chorus', category: 'Modulation',
-    description: 'Thickens the sound, like several players at once.',
-    params: [rate(1.5), depth(0.7), { key: 'delayTime', label: 'Delay', min: 2, max: 20, step: 0.5, default: 3.5, unit: 'ms' }, mix()]
+    description: 'Thickens the sound, like several players at once. Stereo: left and right wobble apart.',
+    params: [
+      rate(1.5),
+      depth(0.7),
+      { key: 'delayTime', label: 'Delay', min: 2, max: 20, step: 0.5, default: 3.5, unit: 'ms' },
+      // Stereo: the right side's delay is offset from the left's, and its wobble runs this
+      // many degrees behind (0: both sides move together, 180: opposite: widest).
+      { key: 'offset', label: 'R delay offset', min: -10, max: 10, step: 0.1, default: 1.5, unit: 'ms' },
+      { key: 'spread', label: 'Stereo spread', min: 0, max: 180, step: 1, default: 90, unit: '°' },
+      { key: 'feedback', label: 'Feedback', min: 0, max: 0.8, step: 0.01, default: 0, unit: '%' },
+      mix()
+    ]
   },
   {
     type: 'phaser', name: 'Phaser', category: 'Modulation',
@@ -227,6 +237,17 @@ export const EFFECTS = [
     type: 'limiter', name: 'Limiter', category: 'Dynamics',
     description: 'Never lets the sound get louder than a ceiling.',
     params: [{ key: 'threshold', label: 'Ceiling', min: -30, max: 0, step: 0.5, default: -6, unit: 'dB' }]
+  },
+  {
+    // Sidechain: the effect's `source` (another track or drum row) pushes this one down
+    // whenever it plays: the "pumping" of dance music, or keeping the bass out of the kick's way.
+    type: 'sidechain', name: 'Sidechain (duck)', category: 'Dynamics',
+    description: 'Ducks this sound whenever another track (e.g. the kick) plays.',
+    params: [
+      { key: 'depth', label: 'Duck by', min: 0, max: 1, step: 0.01, default: 0.7, unit: '%' },
+      { key: 'sensitivity', label: 'Sensitivity', min: 0.01, max: 1, step: 0.01, default: 0.7, unit: '%' },
+      { key: 'release', label: 'Release', min: 0.02, max: 1, step: 0.01, default: 0.2, unit: 's' }
+    ]
   },
   {
     type: 'gate', name: 'Noise gate', category: 'Dynamics',
