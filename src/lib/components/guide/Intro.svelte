@@ -7,6 +7,7 @@
   Opens by itself until the guide is finished or skipped once; Help → Guide opens it again.
 -->
 <script lang="ts">
+  import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as Tone from 'tone';
@@ -56,7 +57,7 @@
     // The music and the screen fade out together, from the next bar.
     atNextBar(() => (phase = 'leaving'));
     void fadeOutBacking(1).then(async () => {
-      if (page.url.pathname !== '/') await goto('/');
+      if (page.url.pathname !== `${base}/`) await goto(`${base}/`);
       fade = 0.35; // then the home page, quickly
       phase = 'out';
       setTimeout(() => (guide.intro = false), 400);
@@ -72,6 +73,7 @@
   onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && enable()}
 >
   <div class="flex flex-col items-center gap-10 transition-opacity ease-in" style="transition-duration: {fade}s; opacity: {phase === 'leaving' ? 0 : 1}">
+    <img src="{base}/humdaw.png" alt="" class="h-28 w-28 rounded-full ring-1 ring-white/20" />
     <Logo class="text-7xl sm:text-8xl" />
     {#if phase === 'black'}
       <button class="intro-pulse text-sm tracking-[0.3em] text-white/70 uppercase" onclick={enable}>Click to enable sound</button>

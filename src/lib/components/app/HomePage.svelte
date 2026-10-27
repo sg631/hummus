@@ -8,6 +8,7 @@
   "Back to <song>" returns to the open project without reloading it.
 -->
 <script lang="ts">
+  import { base } from '$app/paths';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import Logo from './Logo.svelte';
@@ -52,10 +53,10 @@
   }
 
   // Into the studio: its address opens the project.
-  const open = (id: string) => goto(`/studio/${id}`);
+  const open = (id: string) => goto(`${base}/studio/${id}`);
   async function create() {
     await newProject();
-    await goto(`/studio/${library.currentId}`);
+    await goto(`${base}/studio/${library.currentId}`);
   }
   async function rename(id: string, name: string) {
     const next = window.prompt('Rename project', name)?.trim();
@@ -69,7 +70,7 @@
     if (!file) return;
     try {
       await importProjectFile(file);
-      await goto(`/studio/${library.currentId}`);
+      await goto(`${base}/studio/${library.currentId}`);
     } catch (e) {
       window.alert(`That file couldn't be opened: ${e instanceof Error ? e.message : e}`);
     }
@@ -205,7 +206,7 @@
       <button class="hover:text-foreground ml-auto underline" onclick={() => (ui.offlineOpen = true)}>
         {!offline.online ? 'Offline' : 'Work offline'}{offline.total ? ` · ${offline.saved}/${offline.total} sounds saved` : ''}
       </button>
-      <a href="/bench" class="hover:text-foreground underline">Transcription test bench</a>
+      <a href="{base}/bench" class="hover:text-foreground underline">Transcription test bench</a>
     </footer>
   </div>
 </div>

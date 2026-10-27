@@ -9,6 +9,7 @@
 //   leaveGuide()      // finished, or left: the full studio
 //
 // Where it is (step, project) is kept in this browser, so a reload carries on.
+import { base } from '$app/paths';
 import { goto } from '$app/navigation';
 import * as Tone from 'tone';
 import { sync } from '$lib/audio/sync';
@@ -228,7 +229,7 @@ export async function beginGuide(): Promise<boolean> {
   settingsBefore = $state.snapshot(recordingSettings) as RecordingSettings;
   Object.assign(recordingSettings, { countInBars: 1, metronome: false, playAlong: true, loopBars: LOOP_BARS, overdub: true, input: 'voice', punch: false });
   await newProject('First song');
-  Object.assign(project, { bpm: BACKING_BPM, timeSignature: [4, 4], key: 'A', scale: 'minor' });
+  Object.assign(project, { bpm: BACKING_BPM, timeSignature: [4, 4], key: 'C', scale: 'major' });
   addMidiTrack('Melody');
   view.play = 'pattern';
   guide.projectId = library.currentId;
@@ -237,7 +238,7 @@ export async function beginGuide(): Promise<boolean> {
   guide.running = false;
   save();
   startMusic();
-  await goto(`/studio/${library.currentId}`);
+  await goto(`${base}/studio/${library.currentId}`);
   return true;
 }
 
@@ -290,7 +291,7 @@ export function skipGuide() {
 // it opens in the studio. With a guide under way: back to it instead.
 export async function openIntro() {
   if (guide.active && guide.projectId) return continueGuide();
-  if (!location.pathname.startsWith('/studio')) await goto('/studio');
+  if (!location.pathname.startsWith(`${base}/studio`)) await goto(`${base}/studio`);
   guide.intro = true;
 }
 
@@ -304,7 +305,7 @@ export async function continueGuide() {
     save();
     return;
   }
-  await goto(`/studio/${guide.projectId}`);
+  await goto(`${base}/studio/${guide.projectId}`);
 }
 
 export const backingBarSeconds = barSeconds;

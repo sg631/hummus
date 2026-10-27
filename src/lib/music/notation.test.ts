@@ -29,6 +29,8 @@ describe('toAbc', () => {
     expect(body(abc)).toBe('^G4 G4 =G4 A4 |]');
     // F major: B♭ is in the signature.
     expect(body(toAbc([n(70, 0, 1920)], { ...opts, key: 'F' }))).toBe('B16 |]');
+    // C major: borrowed E♭ and B♭ are flats; F♯ (♯4) is a sharp.
+    expect(body(toAbc([n(63, 0, 480), n(70, 480, 480), n(66, 960, 960)], opts))).toBe('_E4 _B4 ^F8 |]');
   });
 
   it('makes chords of notes that start together, and picks the bass clef for low notes', () => {

@@ -9,8 +9,9 @@
 // - lengths that aren't one note value (5 sixteenths…) become tied notes
 // - notes starting together become a chord, as long as the shortest of them (and cut at
 //   the next note); overlaps that don't start together are cut where the next one starts
-// - spelling follows the key: in-key notes take the key signature, others get ♯ (sharp
-//   keys) or ♭ (flat keys); an accidental lasts to the end of its bar, as in print
+// - spelling follows the key: in-key notes take the key signature; others are spelled by
+//   their degree (♭2 ♭3 ♭6 ♭7 as flats, ♯4 and the minor's raised 6th / 7th as sharps); an
+//   accidental lasts to the end of its bar, as in print
 // - the clef: bass if the notes sit mostly below middle C, else treble
 import { Midi, Note as TNote, Scale } from 'tonal';
 import { PPQ, type TimeSignature } from './time';
@@ -53,7 +54,11 @@ function signature(key: string, scale: string): Record<string, number> {
 function spell(pitch: number, key: string, scale: string, flats: boolean): { letter: string; alt: number; octave: number } {
   const parent: Record<string, string> = { 'major pentatonic': 'major', 'minor pentatonic': 'minor', blues: 'minor', chromatic: 'major' };
   const inKey = Scale.get(`${key} ${parent[scale] ?? scale}`).notes.find((n) => TNote.chroma(n) === pitch % 12);
-  const name = inKey ?? TNote.pitchClass(Midi.midiToNoteName(pitch, { sharps: !flats }));
+  // Outside the key: the lowered 2nd, 3rd, 6th and 7th (borrowed from the minor, or the
+  // Neapolitan) as flats; the rest (♯4, the minor's raised 6th and 7th) as sharps.
+  const fromTonic = (((pitch - (TNote.chroma(key) ?? 0)) % 12) + 12) % 12;
+  const asFlat = [1, 3, 8, 10].includes(fromTonic) || (flats && fromTonic !== 6 && fromTonic !== 11 && fromTonic !== 9);
+  const name = inKey ?? TNote.pitchClass(Midi.midiToNoteName(pitch, { sharps: !asFlat }));
   const n = TNote.get(name);
   // The octave follows the letter (B♯ is in the octave below the C it sounds as).
   const octave = Math.floor((pitch - n.alt) / 12) - 1;

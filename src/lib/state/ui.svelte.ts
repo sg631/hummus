@@ -1,5 +1,6 @@
 // Windows anything can open (the menu bar, buttons, shortcuts), and the transport's
 // actions so the menu bar can press Play or Record (TransportBar fills these in).
+import { base } from '$app/paths';
 import { goto } from '$app/navigation';
 import { recorder } from './recorder.svelte';
 
@@ -27,5 +28,5 @@ export const transportActions: Record<'play' | 'stop' | 'togglePlay' | 'toggleRe
 // To the home page (/). Playback stops as the studio closes.
 export function goHome() {
   if (recorder.recording) return; // finish or cancel the recording first
-  void goto('/');
+  void goto(`${base}/`);
 }

@@ -8,6 +8,7 @@
   This page only arranges components; the logic lives in $lib (see ARCHITECTURE.md).
 -->
 <script lang="ts">
+  import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onDestroy, untrack } from 'svelte';
@@ -40,11 +41,11 @@
     (async () => {
       if (!id) {
         const opened = await openLastOrNew();
-        await goto(`/studio/${opened}`, { replaceState: true });
+        await goto(`${base}/studio/${opened}`, { replaceState: true });
       } else if (!(await openProject(id))) {
         ui.message = "That project wasn't found (deleted, or kept somewhere else)";
         setTimeout(() => (ui.message = ''), 4000);
-        await goto('/', { replaceState: true });
+        await goto(`${base}/`, { replaceState: true });
       }
       opening = false;
     })();
@@ -54,7 +55,7 @@
   $effect(() => {
     const current = library.currentId;
     if (!current || opening || current === urlId) return;
-    void goto(`/studio/${current}`, { keepFocus: true, noScroll: true });
+    void goto(`${base}/studio/${current}`, { keepFocus: true, noScroll: true });
   });
 
   // The first time in the studio: the intro (and the guide), unless it was seen or is on.
@@ -84,6 +85,6 @@
   <ExportDialog />
   <ShortcutsDialog />
   <AutomationDrop />
-  <a href="/bench" class="text-muted-foreground absolute right-3 bottom-2 text-xs">transcription test bench</a>
+  <a href="{base}/bench" class="text-muted-foreground absolute right-3 bottom-2 text-xs">transcription test bench</a>
 </div>
 {/if}

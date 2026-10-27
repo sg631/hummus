@@ -1,5 +1,5 @@
-// The guide's backing track: a four-bar loop (drums, bass, pad and an arpeggio, A minor:
-// Am F C G) that plays under the whole guide, built up and stripped back as the guide
+// The guide's backing track: a four-bar loop (drums, bass, pad and an arpeggio, C major:
+// Cmaj9 Am9 A♭maj9 B♭6/9) that plays under the whole guide, built up and stripped back as the guide
 // goes (`setLayers`: each step says what plays, and a crash marks the new step). It isn't part of the project: it doesn't
 // show anywhere, isn't exported or recorded, and can't be edited.
 //
@@ -21,12 +21,14 @@ export const BACKING_BPM = 126;
 const LOOKAHEAD = 0.15; // seconds scheduled ahead
 const STEPS_PER_BAR = 16;
 
-// Am, F, C, G: each chord's notes (MIDI), and the bass root.
+// Cmaj9, Am9, A♭maj9, B♭6/9 (I – vi – ♭VI – ♭VII): each chord's notes (MIDI), and the bass
+// root. The last two borrow from C minor, so ♭VII → I lands home strongly. G is held
+// through all four; the other voices move by step.
 const CHORDS: { notes: number[]; root: number }[] = [
-  { notes: [57, 60, 64], root: 45 },
-  { notes: [57, 60, 65], root: 41 },
-  { notes: [55, 60, 64], root: 48 },
-  { notes: [55, 59, 62], root: 43 }
+  { notes: [64, 67, 71, 74], root: 48 },
+  { notes: [64, 67, 71, 72], root: 45 },
+  { notes: [63, 67, 70, 72], root: 44 },
+  { notes: [62, 67, 70, 72], root: 46 }
 ];
 const ARP = [0, 1, 2, 1]; // chord-note order, one per eighth, an octave up
 
@@ -226,8 +228,8 @@ export function atNextBar(fn: (time: number) => void, bars = 0): ReturnType<type
 }
 
 // When to start Tone's transport so the song lines up with the backing: its bar lines on
-// the backing's, and its bar `songTick` falls under the matching chord (bar 1: Am, bar
-// 2: F…). `leadBars`: bars before `songTick` is reached (a count-in). Returns an audio
+// the backing's, and its bar `songTick` falls under the matching chord (bar 1: Cmaj9, bar
+// 2: Am9…). `leadBars`: bars before `songTick` is reached (a count-in). Returns an audio
 // context time to pass to transport.start().
 export function alignStart(leadBars: number, songTick: number, barTicks: number): number {
   const barSec = barSeconds();
@@ -286,3 +288,8 @@ export async function clickSound() {
 
 // Development: when this file is reloaded, the old copy stops (else two would play).
 if (import.meta.hot) import.meta.hot.dispose(() => stopBacking());
+
+// The backing's output node (for recording it, e.g. a trailer's music).
+export function backingOutput(): Tone.Gain | null {
+  return v?.out ?? null;
+}

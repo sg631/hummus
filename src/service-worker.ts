@@ -13,7 +13,7 @@
 /// <reference lib="esnext" />
 /// <reference lib="webworker" />
 /// <reference types="@sveltejs/kit" />
-import { build, files, version } from '$service-worker';
+import { base, build, files, version } from '$service-worker';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -30,7 +30,7 @@ sw.addEventListener('install', (event) => {
       const cache = await caches.open(APP);
       await cache.addAll(APP_FILES);
       // The page itself (every address serves it: the app finds its route in the browser).
-      await cache.add('/').catch(() => {});
+      await cache.add(`${base}/`).catch(() => {});
       await sw.skipWaiting();
     })()
   );
@@ -73,10 +73,10 @@ sw.addEventListener('fetch', (event) => {
       (async () => {
         try {
           const response = await fetch(request);
-          if (response.ok) (await caches.open(APP)).put('/', response.clone());
+          if (response.ok) (await caches.open(APP)).put(`${base}/`, response.clone());
           return response;
         } catch {
-          return (await caches.match('/')) ?? Response.error();
+          return (await caches.match(`${base}/`)) ?? Response.error();
         }
       })()
     );

@@ -151,7 +151,7 @@ export const STEPS: GuideStep[] = [
   {
     id: 'roll',
     title: 'Reading the piano roll.',
-    hint: 'The keyboard on the left names the rows: C4 is middle C. Thin lines are beats, darker ones bars, numbered along the top. Shaded rows are notes outside the song’s key (A minor): they tend to clash.',
+    hint: 'The keyboard on the left names the rows: C4 is middle C. Thin lines are beats, darker ones bars, numbered along the top. Shaded rows are notes outside the song’s key (C major): they tend to clash.',
     hide: ['meter'],
     cutoff: 1000,
     enter: () => playLoop(),
@@ -269,7 +269,7 @@ export const STEPS: GuideStep[] = [
   {
     id: 'chord',
     title: 'Your keyboard plays notes.',
-    hint: () => `Hold ${chord(A_MINOR)} together: an A minor chord, the backing’s first.`,
+    hint: () => `Hold ${chord(C_MAJOR)} together: a C major chord, the backing’s first.`,
     cutoff: 4500,
     music: { pad: false },
     enter: keyboardOn,
@@ -278,7 +278,7 @@ export const STEPS: GuideStep[] = [
   {
     id: 'chords',
     title: 'Record chords.',
-    hint: () => `Press Record. After the count-in, play chords (${chord(A_MINOR)}, or any three keys) and press Stop when the loop has gone round.`,
+    hint: () => `Press Record. After the count-in, play chords (${chord(C_MAJOR)}, or any three keys) and press Stop when the loop has gone round.`,
     reveal: ['top.input'],
     focus: 'top.record',
     enter: () => {
@@ -402,7 +402,7 @@ export const STEPS: GuideStep[] = [
   {
     id: 'scale',
     title: 'Scales and keys.',
-    hint: () => `A scale picks seven of the twelve that sound right together. This song is in A minor: A B C D E F G, no sharps or flats. Play them: ${keysFor(A_MINOR_SCALE)}. The piano roll shades every note outside it.`,
+    hint: () => `A scale picks seven of the twelve that sound right together. This song is in C major: C D E F G A B, no sharps or flats (A minor uses the same seven, starting on A). Play them: ${keysFor(A_MINOR_SCALE)}. The piano roll shades every note outside it.`,
     enter: () => {
       keyboardOn();
       liveKeys.octave = 0;
@@ -420,7 +420,7 @@ export const STEPS: GuideStep[] = [
   {
     id: 'progression',
     title: 'Chord progressions.',
-    hint: 'The backing plays four chords, one a bar: A minor, F, C, G, then round again (listen to the bass: each chord’s root). A melody note that’s in the chord under it sounds settled; others pull towards one.',
+    hint: 'The backing plays four chords, one a bar: C, A minor, A♭, B♭, then round again (listen to the bass: each chord’s root). A♭ and B♭ borrow from C minor, outside the key: B♭ → C is why coming home sounds so strong. A melody note in the chord under it sounds settled; others pull towards one.',
     music: { kick: 0, hats: 0, bass: true, pad: true, arp: true },
     next: true
   },
@@ -455,7 +455,7 @@ export const STEPS: GuideStep[] = [
   {
     id: 'staff',
     title: 'The staff.',
-    hint: 'Five lines: higher on them is higher in pitch. The clef at the start says which line is which (treble clef: the lines are E G B D F from the bottom, the spaces F A C E). Then the key signature (♯s or ♭s; A minor has none) and the time signature (4/4). Bar lines split the bars; the bar playing is red.',
+    hint: 'Five lines: higher on them is higher in pitch. The clef at the start says which line is which (treble clef: the lines are E G B D F from the bottom, the spaces F A C E). Then the key signature (♯s or ♭s; C major has none) and the time signature (4/4). Bar lines split the bars; the bar playing is red.',
     enter: () => {
       select(melody());
       view.sheet = true;

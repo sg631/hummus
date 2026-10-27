@@ -7,6 +7,7 @@
 //   startKeyCapture(takeStart, bpm); const notes = stopKeyCapture()   // recording
 //
 // Selected drum track: the note keys play its rows (A the first row, W the second…).
+import { base } from '$app/paths';
 import * as Tone from 'tone';
 import { liveAttack, liveDrum, liveGlide, liveRelease, liveReleaseAll } from '$lib/audio/live';
 import { BASE_NOTE, MonoVoice, noteKeys, POLY_OCTAVE_KEYS, type KeyLayout, POLY_VELOCITY_KEYS, TakeBuilder, type VoiceEvent } from '$lib/music/keyboard';
@@ -151,7 +152,7 @@ function typing(e: KeyboardEvent): boolean {
 
 function onDown(e: KeyboardEvent) {
   if (e.ctrlKey || e.metaKey || e.altKey || typing(e)) return;
-  if (!location.pathname.startsWith('/studio')) return; // the home page: typing isn't playing
+  if (!location.pathname.startsWith(`${base}/studio`)) return; // the home page: typing isn't playing
   const t = selectedTrack();
   if (!t || t.kind === 'voice') return;
   const code = e.code;
