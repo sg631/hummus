@@ -34,12 +34,17 @@ interface Saved {
   step: number;
   projectId: string | null;
   settings: RecordingSettings | null; // the recording settings from before the guide changed them
+  opens: number; // times the app was opened (a tab; a reload doesn't count)
+  introAt: number | null; // the open the intro was answered in (Begin or Skip); null: not yet
+  reminded: boolean; // "you can come back to the guide" was dismissed
 }
 
 function load(): Saved {
-  const empty: Saved = { done: false, active: false, step: 0, projectId: null, settings: null };
+  const empty: Saved = { done: false, active: false, step: 0, projectId: null, settings: null, opens: 0, introAt: null, reminded: false };
   try {
-    return { ...empty, ...JSON.parse(localStorage.getItem(KEY) ?? 'null') };
+    const s: Saved = { ...empty, ...JSON.parse(localStorage.getItem(KEY) ?? 'null') };
+    if (s.introAt === null && (s.done || s.active)) s.introAt = 0; // from before opens were counted
+    return s;
   } catch {
     return empty;
   }
@@ -54,20 +59,49 @@ export const guide = $state({
   running: false, // the music is on and the step has started (else: "click to continue")
   hint: '', // replaces the step's hint for a moment (e.g. "nothing heard")
   moving: false, // going to the next step on the next bar
-  intro: false // the intro screen is showing (Intro.svelte)
+  intro: false, // the intro screen is showing (Intro.svelte)
+  reminder: false // "you can come back to the guide at any time" is showing (GuideReminder.svelte)
 });
 let settingsBefore = saved.settings;
 let done = saved.done;
+let opens = saved.opens;
+let introAt = saved.introAt;
+let reminded = saved.reminded;
 
 function save() {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ done, active: guide.active, step: guide.step, projectId: guide.projectId, settings: settingsBefore } satisfies Saved));
+    localStorage.setItem(KEY, JSON.stringify({ done, active: guide.active, step: guide.step, projectId: guide.projectId, settings: settingsBefore, opens, introAt, reminded } satisfies Saved));
   } catch {
     // storage blocked: the guide still works, it just won't survive a reload
   }
 }
 
-export const guideSeen = () => done;
+// The app opened (the layout, once): counts the open, then the intro the first time, or,
+// the next time after it, the reminder that the guide is still there.
+export function appOpened() {
+  try {
+    if (!sessionStorage.getItem(KEY)) {
+      sessionStorage.setItem(KEY, '1');
+      opens++;
+      save();
+    }
+  } catch {
+    // storage blocked: every load counts as the first
+  }
+  if (introAt === null) guide.intro = true;
+  else if (opens > introAt && !reminded && !guide.active) guide.reminder = true;
+}
+
+// The intro answered (Begin or Skip): it doesn't open by itself again.
+function introAnswered() {
+  if (introAt === null) introAt = opens;
+}
+
+export function dismissReminder() {
+  guide.reminder = false;
+  reminded = true;
+  save();
+}
 
 // What's on screen at a step: every reveal so far, minus what was hidden since.
 export function partsAt(step: number): Set<Part> {
@@ -233,6 +267,7 @@ export async function beginGuide(): Promise<boolean> {
   addMidiTrack('Melody');
   view.play = 'pattern';
   guide.projectId = library.currentId;
+  introAnswered();
   guide.step = 0;
   guide.active = true;
   guide.running = false;
@@ -284,12 +319,14 @@ export async function leaveGuide() {
 // Skipped from the intro: remembered, so it doesn't open by itself again.
 export function skipGuide() {
   done = true;
+  introAnswered();
   save();
 }
 
 // The intro (and the guide) again, from the menu. It plays music, so from the home page
 // it opens in the studio. With a guide under way: back to it instead.
 export async function openIntro() {
+  if (guide.reminder) dismissReminder(); // found it
   if (guide.active && guide.projectId) return continueGuide();
   if (!location.pathname.startsWith(`${base}/studio`)) await goto(`${base}/studio`);
   guide.intro = true;

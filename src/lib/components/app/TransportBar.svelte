@@ -521,7 +521,7 @@
       disabled={recorder.recording || !project.tracks.some((t) => t.kind === 'midi' && t.clips.some((c) => c.notes.length))}
       title="Export MIDI: download every melody track's notes as a MIDI file">MIDI ↓</Button
     >
-    <Button class="h-10 px-3" variant="outline" onclick={openIntro} disabled={recorder.recording} title="The guide: build a first song, one feature at a time">Guide</Button>
+    <Button class="h-10 px-3" variant="outline" data-guide-reminder onclick={openIntro} disabled={recorder.recording} title="The guide: build a first song, one feature at a time">Guide</Button>
   </div>
 
   <!-- On the right: the mic (a tuner); where the playhead is, the shift keys, the key. -->

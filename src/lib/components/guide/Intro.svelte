@@ -17,13 +17,14 @@
   import { liveInput } from '$lib/state/live-input.svelte';
 
   // black → (click) → choose → begin / skip → out (fading away)
-  let phase = $state<'black' | 'choose' | 'starting' | 'leaving' | 'out'>(Tone.getContext().state === 'running' ? 'choose' : 'black');
+  const soundOn = Tone.getContext().state === 'running'; // already clicked once: straight to the choice
+  let phase = $state<'black' | 'choose' | 'starting' | 'leaving' | 'out'>(soundOn ? 'choose' : 'black');
   let error = $state('');
   let fade = $state(barSeconds()); // seconds: the fades last a bar of the music
 
   // The intro's music: drums, bass and pad, muffled.
   const INTRO = { kick: 2, snare: false, hats: 1, bass: true, pad: true, arp: false } as const;
-  if (phase === 'choose') void startBacking({ cutoff: 300, bpm: () => BACKING_BPM, layers: { ...INTRO } });
+  if (soundOn) void startBacking({ cutoff: 300, bpm: () => BACKING_BPM, layers: { ...INTRO } });
 
   let enabling = false;
   async function enable() {

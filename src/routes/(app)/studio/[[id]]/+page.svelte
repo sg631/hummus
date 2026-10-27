@@ -19,8 +19,7 @@
   import ShortcutsDialog from '$lib/components/app/ShortcutsDialog.svelte';
   import AutomationDrop from '$lib/components/app/AutomationDrop.svelte';
   import GuideStage from '$lib/components/guide/GuideStage.svelte';
-  import { guide, guideSeen } from '$lib/guide/guide.svelte';
-  import { onMount } from 'svelte';
+  import { guide } from '$lib/guide/guide.svelte';
   import DockLayout from '$lib/components/app/DockLayout.svelte';
   import { stopProject } from '$lib/audio/mixer';
   import { stopPlayhead } from '$lib/state/playhead.svelte';
@@ -56,11 +55,6 @@
     const current = library.currentId;
     if (!current || opening || current === urlId) return;
     void goto(`${base}/studio/${current}`, { keepFocus: true, noScroll: true });
-  });
-
-  // The first time in the studio: the intro (and the guide), unless it was seen or is on.
-  onMount(() => {
-    if (!guideSeen() && !guide.active) guide.intro = true;
   });
 
   // Going home (or anywhere): the song stops.

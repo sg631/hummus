@@ -111,6 +111,7 @@
       <button
         class="hover:bg-muted flex flex-col items-start gap-1 rounded-lg border p-5 text-left transition disabled:opacity-50"
         disabled={!library.ready || needsFolder}
+        data-guide-reminder
         onclick={() => (guide.active ? continueGuide() : openIntro())}
       >
         <span class="text-2xl leading-none">{guide.active ? '›' : '?'}</span>
